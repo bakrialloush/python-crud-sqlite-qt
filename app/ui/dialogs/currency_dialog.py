@@ -1,0 +1,152 @@
+"""Create and edit form for a currency."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import replace
+from decimal import Decimal
+
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QLineEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app.domain.currency import Currency
+from app.domain.enums import RateMethod
+from app.domain.errors import ValidationError
+from app.domain.validation import MAX_NAME_LENGTH, parse_decimal
+from app.ui.dialogs.form_support import (
+    DIALOG_MINIMUM_WIDTH,
+    build_button_box,
+    build_form_layout,
+    report_validation_error,
+)
+from app.ui.formatting import format_decimal, rate_method_description, rate_method_label
+
+#: Raised by the service to reject a currency; called before the dialog closes.
+CurrencyValidator = Callable[[Currency], None]
+
+
+class CurrencyDialog(QDialog):
+    """One form for both creating and editing.
+
+    ``currency`` selects the mode: ``None`` creates a new one, an existing entity
+    edits it and keeps its id. Validation is injected rather than implemented
+    here, so the rules stay in the service — but they run while the form is still
+    open, so the user reads the message with the field in front of them.
+    """
+
+    def __init__(
+        self,
+        validator: CurrencyValidator,
+        currency: Currency | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._validator = validator
+        self._original = currency
+        self._result: Currency | None = None
+
+        self.setWindowTitle("Edit currency" if currency is not None else "New currency")
+        self.setModal(True)
+        self.setMinimumWidth(DIALOG_MINIMUM_WIDTH)
+
+        form = self._build_fields()
+        self._populate()
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(build_button_box(self))
+
+    @property
+    def currency(self) -> Currency | None:
+        """The validated currency, or ``None`` if the dialog was not accepted."""
+        return self._result
+
+    def accept(self) -> None:
+        """Close only when the currency is valid; otherwise keep the form open."""
+        try:
+            currency = self._build_currency()
+            self._validator(currency)
+        except ValidationError as error:
+            report_validation_error(self, error, self._field_widgets())
+            return
+        self._result = currency
+        super().accept()
+
+    def _build_fields(self) -> QFormLayout:
+        self._name_edit = QLineEdit()
+        self._name_edit.setPlaceholderText("US Dollar")
+        self._name_edit.setMaxLength(MAX_NAME_LENGTH)
+
+        self._code_edit = QLineEdit()
+        self._code_edit.setPlaceholderText("USD")
+        self._code_edit.setMaxLength(6)
+
+        # A plain line edit rather than a spin box: a QDoubleSpinBox would route
+        # the rate through a C double and reintroduce the rounding that Decimal
+        # exists to avoid.
+        self._rate_edit = QLineEdit()
+        self._rate_edit.setPlaceholderText("1")
+
+        self._method_combo = QComboBox()
+        for method in RateMethod:
+            label = f"{rate_method_label(method)}  ({rate_method_description(method)})"
+            self._method_combo.addItem(label, method)
+
+        form = build_form_layout()
+        form.addRow("Name", self._name_edit)
+        form.addRow("Code", self._code_edit)
+        form.addRow("Rate", self._rate_edit)
+        form.addRow("Method", self._method_combo)
+        return form
+
+    def _populate(self) -> None:
+        if self._original is None:
+            self._rate_edit.setText("1")
+            self._select_method(RateMethod.MUL)
+            return
+        self._name_edit.setText(self._original.name)
+        self._code_edit.setText(self._original.code)
+        self._rate_edit.setText(format_decimal(self._original.rate))
+        self._select_method(self._original.method)
+
+    def _select_method(self, method: RateMethod) -> None:
+        index = self._method_combo.findData(method)
+        if index >= 0:
+            self._method_combo.setCurrentIndex(index)
+
+    def _build_currency(self) -> Currency:
+        """Build a currency from the form.
+
+        Raises:
+            ValidationError: if the rate cannot be parsed.
+        """
+        rate: Decimal = parse_decimal(self._rate_edit.text(), field="rate")
+
+        method = self._method_combo.currentData()
+        if not isinstance(method, RateMethod):
+            raise ValidationError("Method must be 'mul' or 'div'.", field="method")
+
+        values = {
+            "name": self._name_edit.text(),
+            "code": self._code_edit.text(),
+            "rate": rate,
+            "method": method,
+        }
+        if self._original is None:
+            return Currency(**values)
+        # Editing: keep the id so the service updates rather than inserts.
+        return replace(self._original, **values)
+
+    def _field_widgets(self) -> Mapping[str, QWidget]:
+        return {
+            "name": self._name_edit,
+            "code": self._code_edit,
+            "rate": self._rate_edit,
+            "method": self._method_combo,
+        }

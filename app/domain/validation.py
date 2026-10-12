@@ -1,0 +1,67 @@
+"""Field-level rules shared by the domain entities.
+
+Centralising these keeps each rule — and its user-facing message — defined once,
+so ``Currency`` and ``Account`` cannot drift apart on what a valid name is.
+
+Each function raises :class:`ValidationError` and returns nothing; callers that
+want the canonical value call ``entity.normalized()``.
+"""
+
+from __future__ import annotations
+
+import re
+from decimal import Decimal, InvalidOperation
+
+from app.domain.errors import ValidationError
+
+MAX_NAME_LENGTH = 60
+
+# Two to six letters, compared upper-case: "USD", "EUR", "BTC".
+CODE_PATTERN = re.compile(r"^[A-Z]{2,6}$")
+
+
+def parse_decimal(text: str, *, field: str) -> Decimal:
+    """Parse user-entered text into an exact :class:`~decimal.Decimal`.
+
+    Deliberately not ``float``: routing a rate through a binary float would
+    introduce rounding before the value ever reaches the database.
+    """
+    cleaned = text.strip().replace(",", "")
+    if not cleaned:
+        raise ValidationError("A value is required.", field=field)
+    try:
+        value = Decimal(cleaned)
+    except InvalidOperation:
+        raise ValidationError("Must be a number, for example 3.75.", field=field) from None
+    if not value.is_finite():
+        raise ValidationError("Must be a finite number.", field=field)
+    return value
+
+
+def require_name(value: str) -> None:
+    """Require a non-blank name within :data:`MAX_NAME_LENGTH`."""
+    name = value.strip()
+    if not name:
+        raise ValidationError("Name is required.", field="name")
+    if len(name) > MAX_NAME_LENGTH:
+        raise ValidationError(
+            f"Name must be {MAX_NAME_LENGTH} characters or fewer.", field="name"
+        )
+
+
+def require_currency_code(value: str) -> None:
+    """Require a 2-6 letter code, compared case-insensitively."""
+    if not CODE_PATTERN.match(value.strip().upper()):
+        raise ValidationError("Code must be 2-6 letters, for example USD.", field="code")
+
+
+def require_positive_rate(value: Decimal) -> None:
+    """Require a finite rate greater than zero.
+
+    Zero is rejected because ``RateMethod.DIV`` would divide by it — this rule is
+    what makes ``Currency.convert`` safe on the divide path.
+    """
+    if not isinstance(value, Decimal) or not value.is_finite():
+        raise ValidationError("Rate must be a number.", field="rate")
+    if value <= 0:
+        raise ValidationError("Rate must be greater than zero.", field="rate")
