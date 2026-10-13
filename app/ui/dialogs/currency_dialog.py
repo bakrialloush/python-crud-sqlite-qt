@@ -7,10 +7,12 @@ from dataclasses import replace
 from decimal import Decimal
 
 from PyQt6.QtWidgets import (
-    QComboBox,
+    QButtonGroup,
     QDialog,
     QFormLayout,
+    QHBoxLayout,
     QLineEdit,
+    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
@@ -93,17 +95,32 @@ class CurrencyDialog(QDialog):
         self._rate_edit = QLineEdit()
         self._rate_edit.setPlaceholderText("1")
 
-        self._method_combo = QComboBox()
-        for method in RateMethod:
-            label = f"{rate_method_label(method)}  ({rate_method_description(method)})"
-            self._method_combo.addItem(label, method)
+        self._method_group, self._method_buttons = self._build_method_buttons()
 
         form = build_form_layout()
         form.addRow("Name", self._name_edit)
         form.addRow("Code", self._code_edit)
         form.addRow("Rate", self._rate_edit)
-        form.addRow("Method", self._method_combo)
+        form.addRow("Method", self._method_group)
         return form
+
+    def _build_method_buttons(self) -> tuple[QWidget, dict[RateMethod, QRadioButton]]:
+        """A radio button per rate method, in a group that allows only one."""
+        container = QWidget()
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(16)
+
+        group = QButtonGroup(container)
+        buttons: dict[RateMethod, QRadioButton] = {}
+        for method in RateMethod:
+            label = f"{rate_method_label(method)}  ({rate_method_description(method)})"
+            button = QRadioButton(label)
+            group.addButton(button)
+            row.addWidget(button)
+            buttons[method] = button
+        row.addStretch()
+        return container, buttons
 
     def _populate(self) -> None:
         if self._original is None:
@@ -116,9 +133,15 @@ class CurrencyDialog(QDialog):
         self._select_method(self._original.method)
 
     def _select_method(self, method: RateMethod) -> None:
-        index = self._method_combo.findData(method)
-        if index >= 0:
-            self._method_combo.setCurrentIndex(index)
+        button = self._method_buttons.get(method)
+        if button is not None:
+            button.setChecked(True)
+
+    def _selected_method(self) -> RateMethod | None:
+        for method, button in self._method_buttons.items():
+            if button.isChecked():
+                return method
+        return None
 
     def _build_currency(self) -> Currency:
         """Build a currency from the form.
@@ -128,8 +151,8 @@ class CurrencyDialog(QDialog):
         """
         rate: Decimal = parse_decimal(self._rate_edit.text(), field="rate")
 
-        method = self._method_combo.currentData()
-        if not isinstance(method, RateMethod):
+        method = self._selected_method()
+        if method is None:
             raise ValidationError("Method must be 'mul' or 'div'.", field="method")
 
         values = {
@@ -148,5 +171,5 @@ class CurrencyDialog(QDialog):
             "name": self._name_edit,
             "code": self._code_edit,
             "rate": self._rate_edit,
-            "method": self._method_combo,
+            "method": self._method_group,
         }
