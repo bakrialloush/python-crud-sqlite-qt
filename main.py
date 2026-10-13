@@ -19,6 +19,7 @@ from app.repositories.currency_repository import SqliteCurrencyRepository
 from app.repositories.transaction_repository import SqliteTransactionRepository
 from app.services.account_service import AccountService
 from app.services.currency_service import CurrencyService
+from app.services.ledger_service import LedgerService
 from app.services.transaction_service import TransactionService
 from app.services.trial_balance_service import TrialBalanceService
 from app.ui.main_window import MainWindow
@@ -57,11 +58,14 @@ def main() -> int:
         transaction_service = TransactionService(
             transaction_repository, account_repository
         )
-        # The report reads all three repositories and writes none of them, so it
-        # is the one service with no rule of its own to enforce.
+        # The reports read repositories and write none of them, so they are the
+        # services with no rule of their own to enforce. The ledger takes one
+        # fewer than the trial balance: it reports in the account's own currency,
+        # so it never has to look the base one up.
         trial_balance_service = TrialBalanceService(
             account_repository, currency_repository, transaction_repository
         )
+        ledger_service = LedgerService(account_repository, transaction_repository)
 
         # First run, or a database the user emptied: without this the app opens
         # on three blank tables. Only ever inserts, so it cannot discard data.
@@ -79,6 +83,7 @@ def main() -> int:
             account_service,
             transaction_service,
             trial_balance_service,
+            ledger_service,
             database.path,
         )
         window.show()

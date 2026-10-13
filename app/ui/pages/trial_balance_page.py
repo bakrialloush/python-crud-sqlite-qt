@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from PyQt6.QtCore import QDate
+from PyQt6.QtCore import QDate, QModelIndex, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDateEdit,
@@ -41,6 +41,11 @@ class TrialBalancePage(QWidget):
     account that posted nothing in the window is a zero row, and dropping those
     is the "Hide zero balances" toggle's job rather than the query's.
     """
+
+    #: Emitted when a row is opened: which account to read the ledger of, and the
+    #: period this report is showing, so the ledger opens on the same window
+    #: rather than on one the reader has to set up again.
+    account_activated = pyqtSignal(int, QDate, QDate)
 
     def __init__(
         self, service: TrialBalanceService, parent: QWidget | None = None
@@ -85,6 +90,9 @@ class TrialBalancePage(QWidget):
 
         self._table = build_table_view(stretch_column=_STRETCH_COLUMN)
         self._table.setModel(self._proxy)
+        # The one thing a read-only report can be asked to do, so it is worth
+        # saying out loud rather than leaving to be discovered.
+        self._table.setToolTip("Double-click an account to read its ledger.")
 
         heading = QLabel("Trial Balance")
         heading.setObjectName("title")
@@ -151,6 +159,7 @@ class TrialBalancePage(QWidget):
         self._hide_zeros.toggled.connect(self._on_hide_zeros_toggled)
         self._search.textChanged.connect(self._on_search)
         self._refresh.clicked.connect(lambda: self.reload())
+        self._table.doubleClicked.connect(self._on_row_activated)
 
     def _prefill_period(self) -> None:
         """Open on the days the stored transactions cover.
@@ -188,6 +197,19 @@ class TrialBalancePage(QWidget):
     def _on_search(self, text: str) -> None:
         self._proxy.setFilterFixedString(text)
         self._refresh_status()
+
+    def _on_row_activated(self, index: QModelIndex) -> None:
+        """Ask for the row's account to be read as a ledger.
+
+        The index arrives in proxy coordinates, so it is mapped before the model
+        is asked for the row behind it — the same step the CRUD pages take for a
+        selection. Where the ledger is and how it is shown is not this page's
+        business; it reports what was opened and leaves the rest to the window.
+        """
+        row = self._model.item_at(self._proxy.mapToSource(index).row())
+        self.account_activated.emit(
+            row.account_id, self._from_edit.date(), self._to_edit.date()
+        )
 
     # ------------------------------------------------------------------ helpers
     def _bound_dates(self) -> None:

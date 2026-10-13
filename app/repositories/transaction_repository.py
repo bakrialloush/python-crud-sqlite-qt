@@ -9,7 +9,7 @@ from decimal import Decimal
 from app.domain.enums import TransactionType
 from app.domain.split import Split
 from app.domain.transaction import Transaction
-from app.domain.views import TransactionView
+from app.domain.views import LedgerPosting, TransactionView
 from app.repositories.sqlite_repository import SqliteRepository
 
 #: The stored form of a timestamp. SQLite has no date type; this is the ISO 8601
@@ -181,6 +181,86 @@ class SqliteTransactionRepository(SqliteRepository[Transaction]):
                 row["amount"]
             )
         return totals
+
+    def net_before(self, account_id: int, instant: DateTime) -> Decimal:
+        """``account_id``'s splits before ``instant``, added up exactly.
+
+        The mirror of :meth:`net_by_account` with the other half of the range:
+        what a report over ``[start, end]`` needs in order to state the balance
+        it opens on. Summed in Python for the reason given there — ``amount`` is
+        TEXT holding an exact ``Decimal``, and SQL ``SUM`` would coerce it to a
+        REAL and lose the precision the column type exists to preserve.
+
+        The bound compares as text, which is the same order as time because the
+        stored format is zero-padded, most significant part first.
+        """
+        rows = self._database.query(
+            """
+            SELECT s.amount AS amount
+            FROM splits AS s
+            JOIN transactions AS t ON t.id = s.transaction_id
+            WHERE s.account_id = ? AND t.datetime < ?
+            """,
+            (account_id, instant.strftime(DATETIME_FORMAT)),
+        )
+        return sum((Decimal(row["amount"]) for row in rows), Decimal(0))
+
+    def list_postings(
+        self, account_id: int, start: DateTime, end: DateTime
+    ) -> list[LedgerPosting]:
+        """The splits posted to ``account_id`` over ``[start, end]``, oldest first.
+
+        One query rather than a lookup per posting: each line of the ledger names
+        the account on the other side of its transaction, so resolving that
+        lazily would be an N+1. The counterparty is selected by the ``CASE``
+        below, which is the single place that decision is made.
+
+        Both joins are inner joins and every foreign key they follow is NOT NULL,
+        so an account named here cannot be missing — an account a transaction
+        touched cannot be deleted at all.
+
+        The tie-break on ``t.id`` is not cosmetic: two postings in the same minute
+        would otherwise be free to come back in either order, and the running
+        balance the report adds up would differ between two reads of the same
+        data.
+        """
+        rows = self._database.query(
+            """
+            SELECT t.datetime  AS datetime,
+                   t.id        AS transaction_id,
+                   t.type      AS type,
+                   t.notes     AS notes,
+                   other.id    AS counterparty_id,
+                   other.name  AS counterparty_name,
+                   s.amount    AS amount
+            FROM splits AS s
+            JOIN transactions AS t ON t.id = s.transaction_id
+            JOIN accounts AS other
+              ON other.id = CASE WHEN s.account_id = t.cash_account_id
+                                 THEN t.account_id
+                                 ELSE t.cash_account_id
+                            END
+            WHERE s.account_id = ? AND t.datetime >= ? AND t.datetime <= ?
+            ORDER BY t.datetime, t.id
+            """,
+            (
+                account_id,
+                start.strftime(DATETIME_FORMAT),
+                end.strftime(DATETIME_FORMAT),
+            ),
+        )
+        return [
+            LedgerPosting(
+                datetime=DateTime.strptime(row["datetime"], DATETIME_FORMAT),
+                transaction_id=row["transaction_id"],
+                type=TransactionType(row["type"]),
+                counterparty_id=row["counterparty_id"],
+                counterparty_name=row["counterparty_name"],
+                notes=row["notes"],
+                amount=Decimal(row["amount"]),
+            )
+            for row in rows
+        ]
 
     def date_bounds(self) -> tuple[DateTime, DateTime] | None:
         """The earliest and latest transaction times, or ``None`` when empty.

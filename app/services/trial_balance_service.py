@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from datetime import datetime as DateTime
-from datetime import time
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.domain.currency import Currency
@@ -16,6 +14,7 @@ from app.repositories.interfaces import (
     CurrencyRepository,
     TransactionRepository,
 )
+from app.services.period import end_of, start_of, transaction_period
 
 #: The precision converted amounts are rounded to. The ``In Base`` column is the
 #: one the report totals, so rounding each row is what keeps the footer equal to
@@ -54,12 +53,10 @@ class TrialBalanceService:
         """The days the stored transactions span, or ``None`` when there are none.
 
         For prefilling the report's date fields, so it opens on the period the
-        data covers instead of one the user has to discover.
+        data covers rather than one the user has to discover. The rule itself
+        lives in :mod:`app.services.period`, shared with the ledger report.
         """
-        bounds = self._transactions.date_bounds()
-        if bounds is None:
-            return None
-        return (bounds[0].date(), bounds[1].date())
+        return transaction_period(self._transactions)
 
     def build(self, start: date, end: date) -> TrialBalance:
         """The trial balance for the period from ``start`` to ``end``, both ends.
@@ -85,9 +82,7 @@ class TrialBalanceService:
         # Every account, not only those that posted: an account with nothing in
         # the period is a zero figure the report is expected to show, and ``net``
         # supplies the zero for it.
-        net = self._transactions.net_by_account(
-            self._start_of(start), self._end_of(end)
-        )
+        net = self._transactions.net_by_account(start_of(start), end_of(end))
 
         rows = [
             self._row(account, net.get(account.id, Decimal(0)), by_id)
@@ -123,17 +118,3 @@ class TrialBalanceService:
                 _CENTS, rounding=ROUND_HALF_UP
             ),
         )
-
-    @staticmethod
-    def _start_of(day: date) -> DateTime:
-        """The first instant of ``day``."""
-        return DateTime.combine(day, time.min)
-
-    @staticmethod
-    def _end_of(day: date) -> DateTime:
-        """The last instant of ``day``, so the whole of it counts.
-
-        Inclusive at both ends is the rule a period is read by, and this is
-        where it is decided rather than in the repository or the widget.
-        """
-        return DateTime.combine(day, time.max)

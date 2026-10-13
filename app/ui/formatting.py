@@ -144,3 +144,23 @@ def format_decimal(value: Decimal) -> str:
     if normalized == normalized.to_integral_value():
         return str(normalized.quantize(Decimal(1)))
     return format(normalized, "f")
+
+
+def format_debit(balance: Decimal) -> str:
+    """Render a signed ledger figure for the debit side, or blank.
+
+    The reports split one signed figure — debits positive, credits negative —
+    into two columns, and which column it lands in follows from the sign rather
+    than from anything the row carries. The other side is blank rather than "0",
+    so a column reads as the side that has something in it and two figures can
+    be compared down the page.
+
+    Shared by the trial balance and the ledger, which draw the same two columns
+    from the same convention.
+    """
+    return format_decimal(balance) if balance > 0 else ""
+
+
+def format_credit(balance: Decimal) -> str:
+    """Render a signed ledger figure for the credit side, shown positive, or blank."""
+    return format_decimal(-balance) if balance < 0 else ""

@@ -135,10 +135,17 @@ it off, so removing it silently disables every RESTRICT.
 deleted by anything except `seed.py`'s `allow_base=True`, and is not a field any dialog
 offers.
 
-**A read-only tab is not a CRUD tab.** `TrialBalancePage` does not extend `CrudPage` — it
-shares only `build_table_view` / `build_filter_proxy` and `BaseTableModel`, and reloads
-from the other pages' `data_changed` signal. A page that writes emits `data_changed`;
-`MainWindow` wires which tabs each one refreshes, always in the direction of the reader.
+**A read-only tab is not a CRUD tab.** `TrialBalancePage` and `LedgerPage` do not extend
+`CrudPage` — they share only `build_table_view` / `build_filter_proxy` and `BaseTableModel`,
+and reload from the other pages' `data_changed` signal. A page that writes emits
+`data_changed`; `MainWindow` wires which tabs each one refreshes, always in the direction of
+the reader. A report that leads somewhere else emits what was opened (`account_activated`)
+and lets `MainWindow` make the move, since only it knows which tab is showing.
+
+**A report's period has one home.** `app/services/period.py` converts the two days a report
+is asked for into the instants it reads — inclusive at both ends. Both reports delegate to
+it; deriving the last instant of a day in a second place is how a report ends up dropping
+its final day's rows.
 
 **Cross-entity deletes are refused, not cascaded**, when the child was not the user's to
 lose: `CurrencyService` counts accounts, `AccountService.delete_refusal` counts

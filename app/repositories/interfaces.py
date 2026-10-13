@@ -16,7 +16,7 @@ from app.domain.account import Account
 from app.domain.currency import Currency
 from app.domain.split import Split
 from app.domain.transaction import Transaction
-from app.domain.views import AccountView, TransactionView
+from app.domain.views import AccountView, LedgerPosting, TransactionView
 
 T = TypeVar("T")
 
@@ -86,6 +86,23 @@ class TransactionRepository(
         The sum of that account's signed splits — debits positive, credits
         negative. Only accounts that posted in the period appear, so a caller
         wanting every account supplies its own zero for the rest.
+        """
+
+    def net_before(self, account_id: int, instant: DateTime) -> Decimal:
+        """``account_id``'s position over everything posted before ``instant``.
+
+        The same sum over the other half of the ledger's period: what a report
+        showing ``[start, end]`` needs to state the balance it opens on. Zero
+        for an account with no history before that instant.
+        """
+
+    def list_postings(
+        self, account_id: int, start: DateTime, end: DateTime
+    ) -> list[LedgerPosting]:
+        """The splits posted to ``account_id`` in ``[start, end]``, oldest first.
+
+        Each carries the account on the other side of its transaction, so the
+        ledger can describe a posting without resolving the reference per row.
         """
 
     def date_bounds(self) -> tuple[DateTime, DateTime] | None:

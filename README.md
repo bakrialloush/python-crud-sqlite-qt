@@ -72,6 +72,19 @@ currency's rate (`mul` by a rate is undone by dividing by it), and each converte
 figure is rounded to cents before it is added, so what the footer sums is what
 the table shows.
 
+A **ledger** reports one account over a period: every posting to it, oldest
+first, with the balance after each. Where the trial balance shows the total a
+period left an account holding, the ledger shows the postings that total came
+from — and, since a period read on its own starts mid-history, the balance the
+account carried into it. That opening figure is the report's first line rather
+than a note beside it: a running balance has to start somewhere the reader can
+see, and an account that posted nothing in the window still has a position. It
+is a position rather than a movement, which is why it leaves the Debit and Credit
+columns blank and appears only in Balance — put in a column it would be counted
+twice, and those two columns are read as the period's movement. Reading one
+account at a time is also why the ledger needs no base currency: it reports in
+the account's own.
+
 ## Running it
 
 ```sh
@@ -221,12 +234,24 @@ precision the column type exists to preserve. The trial balance's repository
 method filters the rows by date and the walk over them adds `Decimal` to
 `Decimal`, which is why the report can be trusted to the cent.
 
-**A read-only tab is not a CRUD tab.** The trial balance has no toolbar, no
-dialog and nothing to write, so it does not extend `CrudPage` — it shares only
-the table helpers (`build_table_view`, `build_filter_proxy`) and the table model
-base, and the pages that *do* write reload it through their `data_changed`
-signal. Its period filter and its search box stay independent: the dates decide
-what the service reads, the search decides what the proxy displays.
+**A read-only tab is not a CRUD tab.** Neither report has a toolbar, a dialog or
+anything to write, so neither extends `CrudPage` — they share only the table
+helpers (`build_table_view`, `build_filter_proxy`) and the table model base, and
+the pages that *do* write reload them through their `data_changed` signal. A
+report's period filter and its search box stay independent: the dates decide what
+the service reads, the search decides what the proxy displays. A report may also
+*report* what was opened rather than acting on it — the trial balance emits the
+account a double-click landed on and `MainWindow`, which owns both tabs and knows
+which one is showing, makes the jump into the ledger.
+
+**A report's period has one definition.** `app/services/period.py` turns the two
+days a report is asked for into the instants it reads, inclusive at both ends;
+both reports delegate to it rather than deriving the last instant of a day each.
+The running balance is the same kind of shared decision kept in one place: the
+ledger adds each posting's `Decimal` in Python, as the trial balance does, and
+carries the total forward from the opening balance — which is what makes its last
+row's balance the closing one by construction rather than by a second addition
+that could drift from it.
 
 **A light theme that stays light.** `Fusion` plus an explicit `QPalette` plus a
 stylesheet. The native Windows 11 style follows the operating system's
@@ -255,3 +280,7 @@ dark for anyone running Windows in dark mode.
 - A Trial Balance tab: every account's net position over a date range, shown in
   its own currency with an `In Base` column, orderable by account type, with a
   hide-zero-balances toggle and live search
+- A Ledger tab: one account's postings over a date range, oldest first, with the
+  balance after each and the opening balance the period starts from — reachable
+  by double-clicking an account in the Trial Balance, which opens it on the same
+  period
