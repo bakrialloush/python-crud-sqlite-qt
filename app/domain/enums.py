@@ -53,23 +53,40 @@ class AccountType(str, Enum):
 class TransactionType(str, Enum):
     """How a transaction moves money, and which side of it is the debit.
 
-    A payment takes money out of the cash account and posts it to the account
-    being paid: the cash account is credited (a negative split) and the payment
-    account debited (a positive one).
+    A **payment** takes money out of the cash account: the cash account is
+    credited (a negative split) and the counterparty debited (a positive one).
+    A **receipt** is its mirror image — money in, so the cash account is debited
+    and the counterparty credited.
 
     The direction lives on the member rather than in the form or the entity so
     that the rule has one home: ``Transaction.splits`` reads the signs from
-    here, and a second type added later cannot quietly disagree with the first.
+    here, and a type added later cannot quietly disagree with the others. Each
+    member carries its own cash sign, so a new one states its direction instead
+    of inheriting whichever way the code happens to default.
     """
 
-    PAYMENT = "payment"
+    def __new__(cls, value: str, cash_sign: int) -> "TransactionType":
+        # The mixin keeps the member a ``str`` worth ``value``, so it still binds
+        # straight into SQLite and round-trips through ``TransactionType(value)``;
+        # the extra field travels beside it without becoming the stored value.
+        obj = str.__new__(cls, value)
+        obj._value_ = value
+        obj._cash_sign = cash_sign
+        return obj
+
+    PAYMENT = ("payment", -1)
+    RECEIPT = ("receipt", 1)
 
     @property
     def cash_sign(self) -> int:
-        """The sign of the cash account's split. Negative: a credit."""
-        return -1
+        """The sign of the cash account's split: negative out, positive in."""
+        return self._cash_sign
 
     @property
     def counterparty_sign(self) -> int:
-        """The sign of the other account's split. Positive: a debit."""
-        return 1
+        """The sign of the other account's split — always opposite the cash one.
+
+        Derived rather than stored: two postings that do not cancel would not be
+        a double-entry transaction, so the invariant holds by construction.
+        """
+        return -self._cash_sign

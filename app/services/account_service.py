@@ -23,7 +23,7 @@ class AccountService:
 
     An account's own rules live on the entity. The rules here are the ones that
     need another entity: that the selected currency actually exists, and that no
-    payment has posted to the account before it is removed.
+    transaction has posted to the account before it is removed.
     """
 
     def __init__(
@@ -82,11 +82,11 @@ class AccountService:
         return self._accounts.update(candidate)
 
     def delete(self, account_id: int) -> None:
-        """Delete an account that no payment has posted to.
+        """Delete an account that no transaction has posted to.
 
         Raises:
             NotFoundError: if there was no such account.
-            ReferentialIntegrityError: if a payment still posts to it.
+            ReferentialIntegrityError: if a transaction still posts to it.
         """
         account = self.get(account_id)
 
@@ -117,10 +117,11 @@ class AccountService:
         return self._refusal_for(account)
 
     def _refusal_for(self, account: Account) -> str | None:
-        """The reason one account cannot go, from its payments alone.
+        """The reason one account cannot go, from its transactions alone.
 
         One sentence, worded once, so the tooltip the user reads before acting
         and the error they would get after are the same rule said the same way.
+        A payment and a receipt both count: either would lose ledger history.
         """
         if account.id is None:
             # Never stored, so nothing can refer to it. Asked to refuse anyway.
@@ -129,7 +130,7 @@ class AccountService:
         blockers = self._transactions.count_by_account(account.id)
         if not blockers:
             return None
-        noun = "payment" if blockers == 1 else "payments"
+        noun = "transaction" if blockers == 1 else "transactions"
         them = "it" if blockers == 1 else "them"
         return (
             f"{account.name} is used by {blockers} {noun} and cannot be deleted. "

@@ -29,9 +29,11 @@ class AccountView:
 class TransactionView:
     """A transaction joined with the names of the two accounts it posts to.
 
-    The payments table names both accounts, so this carries their names rather
-    than making the presentation layer resolve each reference per row — the same
-    reason :class:`AccountView` carries its currency.
+    The transactions table names both accounts, so this carries their names
+    rather than making the presentation layer resolve each reference per row —
+    the same reason :class:`AccountView` carries its currency. ``account_*`` is
+    the counterparty: the account paid for a payment, the account received from
+    for a receipt.
     """
 
     id: int
@@ -43,8 +45,8 @@ class TransactionView:
     notes: str
     cash_account_id: int
     cash_account_name: str
-    payment_account_id: int
-    payment_account_name: str
+    account_id: int
+    account_name: str
 
 
 @dataclass(frozen=True)

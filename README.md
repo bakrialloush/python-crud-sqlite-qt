@@ -18,24 +18,32 @@ and one that moves money between them:
 | --- | --- |
 | `id` | `id` |
 | `datetime` | `transaction_id` → `transactions.id` |
-| `type` — `payment` | `account_id` → `accounts.id` |
+| `type` — `payment`, `receipt` | `account_id` → `accounts.id` |
 | `cash_account_id` → `accounts.id` | `amount` — signed, `+` debit `−` credit |
-| `payment_account_id` → `accounts.id` | |
+| `account_id` → `accounts.id` | |
 | `amount` | |
 | `notes` | |
 
-A **payment** takes money out of a cash account and posts it to the account being
-paid. It is not one row: it is a double-entry posting, stored as one
-`transactions` row plus exactly two `splits` — the account being paid debited
-`+amount`, the cash account credited `−amount` — which always sum to zero. The
-sign carries the direction, so nothing depends on the order the rows come back
-in. Direction is not a field on the form: it follows from the transaction's
-`type`, so a second type added later cannot disagree with the first about which
-side is the debit.
+A **transaction** moves money between a cash account and one other, and there
+are two kinds of it. A **payment** takes money out of the cash account and posts
+it to the counterparty: the counterparty is debited `+amount` and the cash
+account credited `−amount`. A **receipt** is the mirror image — money in, so the
+cash account is debited and the counterparty credited. Either is not one row: it
+is a double-entry posting, stored as one `transactions` row plus exactly two
+`splits`, which always sum to zero. The sign carries the direction, so nothing
+depends on the order the rows come back in. Direction is not a field on the
+form: it follows from the transaction's `type`, so the two kinds cannot disagree
+about which side is the debit — which is why the Payments and Receipts tabs
+share one form and one table.
 
-A payment moves money rather than converting it, so both of its accounts have to
-be held in the same currency. The picker only offers accounts that are, and the
-service refuses anything else, rather than pricing the posting with a rate.
+`account_id` is the counterparty — the account paid for a payment, the account
+received from for a receipt — so it is named for the side it holds rather than
+for one direction.
+
+A transaction moves money rather than converting it, so both of its accounts
+have to be held in the same currency. The picker only offers accounts that are,
+and the service refuses anything else, rather than pricing the posting with a
+rate.
 
 `rate` and `method` describe a conversion: `method=mul` means an amount is
 multiplied by the rate, `method=div` means it is divided by it. Rates are held as
@@ -55,8 +63,8 @@ holding the one-base rule underneath them.
 
 A **trial balance** reports every account's position over a period. An account's
 figure is nothing but the sum of the splits posted to it — debits positive,
-credits negative — so the report reads the ledger the payments wrote rather than
-keeping a balance of its own. Accounts may be held in more than one currency, so
+credits negative — so the report reads the ledger the transactions wrote rather
+than keeping a balance of its own. Accounts may be held in more than one currency, so
 each row carries its own figure *and* a second one converted into the base: the
 converted column is what the footer totals, since adding amounts in different
 currencies would mean nothing. Converting into the base is the inverse of a
@@ -92,11 +100,11 @@ the sample data back, not merely when it is missing.
 
 Either way you get one currency (`USD`, rate `1`, `mul`, the base) and two
 accounts denominated in it: an asset account, `الصندوق`, and an expense account,
-`المصروفات`. Two rather than one because a payment moves money between two
-accounts, so with the till alone there would be nothing to pay and the Payments
-tab would be inert on a fresh install. Both are written through the services
-rather than raw SQL — so the seed faces the same validation the UI does. Treat
-the database as disposable.
+`المصروفات`. Two rather than one because a transaction moves money between two
+accounts, so with the till alone there would be nothing to pay or receive and
+the Payments and Receipts tabs would be inert on a fresh install. Both are
+written through the services rather than raw SQL — so the seed faces the same
+validation the UI does. Treat the database as disposable.
 
 The database from an older version gains the `is_base` column when it is next
 opened, but as `0`: no existing row is promoted to base, since which currency
@@ -107,6 +115,12 @@ A database from before payments existed gains the `transactions` and `splits`
 tables the same way, and needs nothing else — both are new tables, so
 `CREATE TABLE IF NOT EXISTS` adds them on the next launch and no existing row is
 touched.
+
+A database from before *receipts* existed is the other case, and is not upgraded
+in place: the `type` CHECK was widened from `('payment')` to
+`('payment', 'receipt')`, and `payment_account_id` was renamed to `account_id`.
+SQLite cannot alter a CHECK, so — as with any schema change here — delete
+`data/ledger.db` and let the app re-seed it.
 
 ## Layers
 
@@ -221,17 +235,22 @@ dark for anyone running Windows in dark mode.
 
 ## Features
 
-- Full create, read, update and delete for currencies, accounts and payments
+- Full create, read, update and delete for currencies, accounts, payments and
+  receipts
 - Live search across every column, case-insensitive
 - Duplicate currency codes rejected, case-insensitively (`usd` collides with `USD`)
 - Rates validated as positive, finite decimals
 - Accounts cannot be saved without a currency; currencies cannot be deleted while in use
 - The base currency keeps its rate and method, and cannot be deleted
-- Every payment is a balanced double-entry posting, its two splits written with
-  it in one database transaction and rewritten when it is edited
-- A payment's cash side is restricted to asset accounts, and both of its accounts
-  to one currency — enforced in the service, not only in the picker
-- Deleting an account a payment posted to is refused, with the reason on the
+- Payments and Receipts tabs share one form and one table: a payment posts the
+  counterparty debit / cash credit, a receipt the mirror image, and the
+  direction lives on the transaction type rather than in the form
+- Every transaction — payment or receipt — is a balanced double-entry posting,
+  its two splits written with it in one database transaction and rewritten when
+  it is edited
+- A transaction's cash side is restricted to asset accounts, and both of its
+  accounts to one currency — enforced in the service, not only in the picker
+- Deleting an account a transaction posted to is refused, with the reason on the
   disabled button rather than in a message box afterwards
 - A Trial Balance tab: every account's net position over a date range, shown in
   its own currency with an `In Base` column, orderable by account type, with a

@@ -105,9 +105,12 @@ is zero-padded so text comparison is chronological — `net_by_account` and `dat
 rely on it.
 
 **Signs, not column order, say which side is the debit.** `Transaction.splits()` is the
-single definition of how a type posts: the counterparty debited, the cash account credited,
-always summing to zero. The repository writes exactly what it returns and never re-derives
-the direction. Direction follows from the transaction's `type`, not from a form field.
+single definition of how a type posts: each side takes the sign its `TransactionType`
+gives it — for a payment the counterparty debited and the cash account credited, for a
+receipt the mirror image — always summing to zero. The sign lives on the enum member, so
+a new type states its direction rather than inheriting one. The repository writes exactly
+what `splits()` returns and never re-derives the direction. Direction follows from the
+transaction's `type`, not from a form field.
 
 **A refused action is disabled, not just rejected.** `CrudPage._delete_refusal(item)`
 returns the reason a row cannot be deleted; the page turns that into a disabled Delete
@@ -120,7 +123,8 @@ missing, which is what keeps `CREATE TABLE IF NOT EXISTS` from silently leaving 
 databases behind. `COLUMN_ADDITIONS` runs *between* the tables and the indexes, because an
 index may name a column only these add. `ALTER TABLE` cannot add a `CHECK`, and SQLite
 cannot alter one — widening a `CHECK`-constrained enum (e.g. `TransactionType`) means
-rebuilding the table, not adding a row here.
+rebuilding the table, not adding a row here. That is why adding `receipt` shipped as an
+edit to `TRANSACTIONS_TABLE` plus a re-seed, rather than an entry in this tuple.
 
 **`PRAGMA foreign_keys = ON`** is set per connection in `Database.connect`; SQLite defaults
 it off, so removing it silently disables every RESTRICT.
@@ -137,8 +141,8 @@ from the other pages' `data_changed` signal. A page that writes emits `data_chan
 `MainWindow` wires which tabs each one refreshes, always in the direction of the reader.
 
 **Cross-entity deletes are refused, not cascaded**, when the child was not the user's to
-lose: `CurrencyService` counts accounts, `AccountService.delete_refusal` counts payments,
-and each names the count in the message.
+lose: `CurrencyService` counts accounts, `AccountService.delete_refusal` counts
+transactions, and each names the count in the message.
 
 ## UI conventions
 

@@ -6,6 +6,7 @@ while the table models, the dialogs and the tooltips all share one definition.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime as DateTime
 from decimal import Decimal
 
@@ -24,8 +25,62 @@ _RATE_METHOD_LABELS: dict[RateMethod, str] = {
     RateMethod.DIV: "divide",
 }
 
-_TRANSACTION_TYPE_LABELS: dict[TransactionType, str] = {
-    TransactionType.PAYMENT: "Payment",
+
+@dataclass(frozen=True)
+class TransactionTypeText:
+    """The words one transaction type uses across the dialogs and pages.
+
+    One record per type, so the dialog's field labels, the page's headings and
+    the messages both show cannot drift apart. Adding a type is one entry here
+    rather than edits scattered over the widgets — the same reason the split
+    signs live on the enum instead of in the form.
+    """
+
+    #: Capitalised singular, for a page heading: "Payment".
+    label: str
+    #: Lower-case singular, for button text and sentence middles: "payment".
+    noun: str
+    #: Lower-case plural, for the search box and status line: "payments".
+    plural: str
+    #: The counterparty field's label: "Paid to" / "Received from".
+    counterparty_label: str
+    #: Placeholder for the notes field.
+    notes_placeholder: str
+    #: Connects the amount to the counterparty in a description: "to" / "from".
+    preposition: str
+    #: How the amount leaves or enters the cash account: "out of" / "into".
+    flow: str
+    #: Shown when the ledger has no asset account to post against yet.
+    no_cash_message: str
+
+
+#: One entry per member of :class:`TransactionType`, so a new type cannot be
+#: added to the enum without someone deciding what it reads as.
+_TRANSACTION_TEXT: dict[TransactionType, TransactionTypeText] = {
+    TransactionType.PAYMENT: TransactionTypeText(
+        label="Payment",
+        noun="payment",
+        plural="payments",
+        counterparty_label="Paid to",
+        notes_placeholder="What this payment was for",
+        preposition="to",
+        flow="out of",
+        no_cash_message=(
+            "Create an asset account first — a payment has to come out of one."
+        ),
+    ),
+    TransactionType.RECEIPT: TransactionTypeText(
+        label="Receipt",
+        noun="receipt",
+        plural="receipts",
+        counterparty_label="Received from",
+        notes_placeholder="What this receipt was for",
+        preposition="from",
+        flow="into",
+        no_cash_message=(
+            "Create an asset account first — a receipt has to come into one."
+        ),
+    ),
 }
 
 #: The timestamp format, spelled for Qt's date widgets. The table and the form
@@ -58,7 +113,16 @@ def rate_method_description(method: RateMethod) -> str:
 
 def transaction_type_label(transaction_type: TransactionType) -> str:
     """Human-readable transaction type, e.g. ``"Payment"``."""
-    return _TRANSACTION_TYPE_LABELS[transaction_type]
+    return transaction_text(transaction_type).label
+
+
+def transaction_text(transaction_type: TransactionType) -> TransactionTypeText:
+    """The display words for ``transaction_type``, all in one record.
+
+    The dialog and the page read their labels from here rather than holding
+    their own copy, so the same type reads the same way in both.
+    """
+    return _TRANSACTION_TEXT[transaction_type]
 
 
 def format_datetime(value: DateTime) -> str:

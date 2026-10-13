@@ -48,9 +48,9 @@ def main() -> int:
 
         currency_service = CurrencyService(currency_repository, account_repository)
         # The account service is told about transactions because deleting an
-        # account a payment posted to has to be refused before it is attempted;
-        # the transaction service is told about accounts, in the other
-        # direction, for the same kind of reason.
+        # account a transaction posted to has to be refused before it is
+        # attempted; the transaction service is told about accounts, in the
+        # other direction, for the same kind of reason.
         account_service = AccountService(
             account_repository, currency_repository, transaction_repository
         )

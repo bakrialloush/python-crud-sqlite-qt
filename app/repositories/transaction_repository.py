@@ -35,7 +35,7 @@ class SqliteTransactionRepository(SqliteRepository[Transaction]):
         "datetime",
         "type",
         "cash_account_id",
-        "payment_account_id",
+        "account_id",
         "amount",
         "notes",
     )
@@ -46,7 +46,7 @@ class SqliteTransactionRepository(SqliteRepository[Transaction]):
             datetime=DateTime.strptime(row["datetime"], DATETIME_FORMAT),
             type=TransactionType(row["type"]),
             cash_account_id=row["cash_account_id"],
-            payment_account_id=row["payment_account_id"],
+            account_id=row["account_id"],
             # The column is TEXT precisely so this round trip is exact.
             amount=Decimal(row["amount"]),
             notes=row["notes"],
@@ -57,7 +57,7 @@ class SqliteTransactionRepository(SqliteRepository[Transaction]):
             entity.datetime.strftime(DATETIME_FORMAT),
             entity.type.value,
             entity.cash_account_id,
-            entity.payment_account_id,
+            entity.account_id,
             str(entity.amount),
             entity.notes,
         )
@@ -88,26 +88,26 @@ class SqliteTransactionRepository(SqliteRepository[Transaction]):
         """Transactions with the names of both accounts, in one query.
 
         Two joins rather than a lookup per row: the table names both accounts of
-        every payment, so resolving them lazily would be an N+1.
+        every transaction, so resolving them lazily would be an N+1.
 
         Both joins are inner joins, and both foreign keys are NOT NULL with no
         cascade, so an account named here cannot be missing — an account that a
-        payment used cannot be deleted at all.
+        transaction used cannot be deleted at all.
         """
         rows = self._database.query(
             """
-            SELECT t.id                 AS id,
-                   t.datetime           AS datetime,
-                   t.type               AS type,
-                   t.amount             AS amount,
-                   t.notes              AS notes,
-                   t.cash_account_id    AS cash_account_id,
-                   cash.name            AS cash_account_name,
-                   t.payment_account_id AS payment_account_id,
-                   paid.name            AS payment_account_name
+            SELECT t.id              AS id,
+                   t.datetime        AS datetime,
+                   t.type            AS type,
+                   t.amount          AS amount,
+                   t.notes           AS notes,
+                   t.cash_account_id AS cash_account_id,
+                   cash.name         AS cash_account_name,
+                   t.account_id      AS account_id,
+                   other.name        AS account_name
             FROM transactions AS t
             JOIN accounts AS cash ON cash.id = t.cash_account_id
-            JOIN accounts AS paid ON paid.id = t.payment_account_id
+            JOIN accounts AS other ON other.id = t.account_id
             ORDER BY t.datetime DESC, t.id DESC
             """
         )
@@ -120,8 +120,8 @@ class SqliteTransactionRepository(SqliteRepository[Transaction]):
                 notes=row["notes"],
                 cash_account_id=row["cash_account_id"],
                 cash_account_name=row["cash_account_name"],
-                payment_account_id=row["payment_account_id"],
-                payment_account_name=row["payment_account_name"],
+                account_id=row["account_id"],
+                account_name=row["account_name"],
             )
             for row in rows
         ]
@@ -207,13 +207,13 @@ class SqliteTransactionRepository(SqliteRepository[Transaction]):
 
         Counting transactions rather than splits because a split's account is
         always one of the transaction's own two, so the two counts agree — and
-        the caller wants to say "used by N payments", not "used by N lines".
+        the caller wants to say "used by N transactions", not "used by N lines".
         """
         rows = self._database.query(
             """
             SELECT COUNT(*) AS total
             FROM transactions
-            WHERE cash_account_id = ? OR payment_account_id = ?
+            WHERE cash_account_id = ? OR account_id = ?
             """,
             (account_id, account_id),
         )

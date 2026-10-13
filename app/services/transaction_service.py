@@ -17,7 +17,7 @@ class TransactionService:
     Rules intrinsic to a transaction — a positive amount, two distinct accounts,
     a valid type — live on the entity. The rules here are the ones that need the
     accounts themselves: that both exist, that the cash side is an asset, and
-    that the two are held in the same currency. A payment moves money rather
+    that the two are held in the same currency. A transaction moves money rather
     than converting it, so a posting across two currencies is refused instead of
     being priced with a rate.
     """
@@ -35,7 +35,7 @@ class TransactionService:
         return self._transactions.list_all_views()
 
     def list_accounts(self) -> list[AccountView]:
-        """The accounts a payment can be posted to.
+        """The accounts a transaction can be posted against.
 
         Read fresh on every dialog open, so the pickers cannot go stale when an
         account is added, renamed or removed on the other tab.
@@ -77,13 +77,11 @@ class TransactionService:
             raise ValidationError(
                 "The cash account must be an asset account.", field="cash_account_id"
             )
-        paid = self._require_account(
-            transaction.payment_account_id, "payment_account_id"
-        )
+        paid = self._require_account(transaction.account_id, "account_id")
         if paid.currency_id != cash.currency_id:
             raise ValidationError(
-                "A payment moves money between accounts held in the same currency.",
-                field="payment_account_id",
+                "Money can move only between accounts held in the same currency.",
+                field="account_id",
             )
 
     def create(self, transaction: Transaction) -> Transaction:

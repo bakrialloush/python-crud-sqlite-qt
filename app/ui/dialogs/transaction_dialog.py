@@ -1,4 +1,4 @@
-"""Create and edit form for a payment."""
+"""Create and edit form for a transaction."""
 
 from __future__ import annotations
 
@@ -29,16 +29,19 @@ from app.ui.dialogs.form_support import (
     build_form_layout,
     report_validation_error,
 )
-from app.ui.formatting import DATETIME_QT_FORMAT, format_decimal
+from app.ui.formatting import DATETIME_QT_FORMAT, format_decimal, transaction_text
 
 #: Raised by the service to reject a transaction; called before the dialog closes.
 TransactionValidator = Callable[[Transaction], None]
 
 
-class PaymentDialog(QDialog):
-    """One form for both creating and editing.
+class TransactionDialog(QDialog):
+    """One form for both creating and editing, for either direction of money.
 
-    ``transaction`` selects the mode, exactly as ``account`` does for
+    ``transaction_type`` fixes which way the transaction posts — a payment's
+    dialog only ever writes payments, a receipt's only receipts — and supplies
+    the wording, since the form is otherwise identical either way. ``transaction``
+    selects the create or edit mode, exactly as ``account`` does for
     :class:`~app.ui.dialogs.account_dialog.AccountDialog`. The caller supplies
     the accounts and is responsible for at least one of them being an asset —
     the page checks before opening this, so the currency picker always has an
@@ -46,21 +49,24 @@ class PaymentDialog(QDialog):
 
     The form narrows from the top down. The currency picker offers the
     currencies holding an asset account; the cash picker offers that currency's
-    assets; the payment picker offers everything else in it, excluding the cash
+    assets; the account picker offers everything else in it, excluding the cash
     account itself. That is convenience rather than the rule:
     ``TransactionService.validate`` checks each again, so a stale or bypassed
-    picker still cannot store a payment that breaks any of them.
+    picker still cannot store a transaction that breaks any of them.
     """
 
     def __init__(
         self,
         accounts: Sequence[AccountView],
+        transaction_type: TransactionType,
         validator: TransactionValidator,
         transaction: Transaction | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._accounts = tuple(accounts)
+        self._transaction_type = transaction_type
+        self._words = transaction_text(transaction_type)
         self._validator = validator
         self._original = transaction
         self._result: Transaction | None = None
@@ -68,9 +74,8 @@ class PaymentDialog(QDialog):
         # along the way do not rebuild a picker that is still being populated.
         self._loading = True
 
-        self.setWindowTitle(
-            "Edit payment" if transaction is not None else "New payment"
-        )
+        mode = "Edit" if transaction is not None else "New"
+        self.setWindowTitle(f"{mode} {self._words.noun}")
         self.setModal(True)
         self.setMinimumWidth(DIALOG_MINIMUM_WIDTH)
 
@@ -84,7 +89,7 @@ class PaymentDialog(QDialog):
         self._loading = False
         # After the guard is lifted, so the pickers fill once, already filtered
         # by the currency the form settled on — the cash accounts first, then
-        # what that cash account settles on can pay.
+        # what that cash account settles on the other side.
         self._refill_cash_options()
 
     @property
@@ -105,9 +110,9 @@ class PaymentDialog(QDialog):
 
     # ---------------------------------------------------------------- assembly
     def _build_fields(self) -> QFormLayout:
-        # The moment is offered rather than assumed: a payment entered today for
-        # an expense from last week belongs on the day it happened, and the
-        # default of "now" costs nothing when that is right.
+        # The moment is offered rather than assumed: a transaction entered today
+        # for one from last week belongs on the day it happened, and the default
+        # of "now" costs nothing when that is right.
         self._datetime_edit = QDateTimeEdit()
         self._datetime_edit.setCalendarPopup(True)
         self._datetime_edit.setDisplayFormat(DATETIME_QT_FORMAT)
@@ -118,8 +123,8 @@ class PaymentDialog(QDialog):
         self._amount_edit.setPlaceholderText("0.00")
 
         # The currency narrows both pickers below to the accounts held in it: a
-        # payment moves money rather than converting it, so the two accounts it
-        # posts to are always held in one currency. Choosing it first is what
+        # transaction moves money rather than converting it, so the two accounts
+        # it posts to are always held in one currency. Choosing it first is what
         # lets the cash picker offer that currency's assets instead of every
         # currency's.
         self._currency_combo = QComboBox()
@@ -128,10 +133,10 @@ class PaymentDialog(QDialog):
 
         # Both filled by _refill_cash_options, which knows the chosen currency.
         self._cash_combo = QComboBox()
-        self._payment_combo = QComboBox()
+        self._account_combo = QComboBox()
 
         self._notes_edit = QPlainTextEdit()
-        self._notes_edit.setPlaceholderText("What this payment was for")
+        self._notes_edit.setPlaceholderText(self._words.notes_placeholder)
         self._notes_edit.setTabChangesFocus(True)
         self._notes_edit.setFixedHeight(self._notes_edit.fontMetrics().lineSpacing() * 3)
 
@@ -143,7 +148,9 @@ class PaymentDialog(QDialog):
         form.addRow("Amount", self._amount_edit)
         form.addRow("Currency", self._currency_combo)
         form.addRow("Cash account", self._cash_combo)
-        form.addRow("Paid to", self._payment_combo)
+        # "Paid to" for a payment, "Received from" for a receipt — the only row
+        # whose meaning turns on the direction the money travels.
+        form.addRow(self._words.counterparty_label, self._account_combo)
         form.addRow("Notes", self._notes_edit)
         return form
 
@@ -167,19 +174,20 @@ class PaymentDialog(QDialog):
 
     def _on_cash_changed(self, *_: object) -> None:
         if not self._loading:
-            self._refill_payment_options()
+            self._refill_account_options()
 
     def _refill_cash_options(self) -> None:
         """Refill the cash picker with the assets held in the chosen currency.
 
-        Only assets, because a payment comes out of one, and only the chosen
-        currency's, because the account being paid is held in the same one.
+        Only assets, because every transaction posts through one — money out of
+        it for a payment, in for a receipt — and only the chosen currency's,
+        because the counterparty account is held in the same one.
         """
         preferred = self._preferred_cash_id()
         currency_id = self._selected_currency_id()
 
         # Held while the list is rebuilt, so the signals the rebuild fires do
-        # not refill the payment picker against a cash list that is only half
+        # not refill the account picker against a cash list that is only half
         # built; it is refilled once below, against what this settles on.
         was_loading = self._loading
         self._loading = True
@@ -195,26 +203,26 @@ class PaymentDialog(QDialog):
             self._select_account(self._cash_combo, preferred)
         finally:
             self._loading = was_loading
-        self._refill_payment_options()
+        self._refill_account_options()
 
-    def _refill_payment_options(self) -> None:
-        """Refill the payment picker with the accounts the cash account may pay.
+    def _refill_account_options(self) -> None:
+        """Refill the account picker with the accounts the cash account may post to.
 
-        Only accounts held in the same currency, because a payment moves money
-        rather than converting it, and never the cash account itself, because
-        debiting and crediting one account posts nothing.
+        Only accounts held in the same currency, because a transaction moves
+        money rather than converting it, and never the cash account itself,
+        because debiting and crediting one account posts nothing.
         """
-        preferred = self._preferred_payment_id()
+        preferred = self._preferred_account_id()
         cash = self._cash_combo.currentData()
 
-        self._payment_combo.clear()
+        self._account_combo.clear()
         if not isinstance(cash, AccountView):
             return
 
         for account in self._accounts:
             if account.currency_id == cash.currency_id and account.id != cash.id:
-                self._payment_combo.addItem(account.name, account)
-        self._select_account(self._payment_combo, preferred)
+                self._account_combo.addItem(account.name, account)
+        self._select_account(self._account_combo, preferred)
 
     def _preferred_cash_id(self) -> int | None:
         """Which cash account to keep selected across a rebuild.
@@ -231,29 +239,30 @@ class PaymentDialog(QDialog):
             return self._original.cash_account_id
         return None
 
-    def _preferred_payment_id(self) -> int | None:
-        """Which payment account to keep selected across a rebuild.
+    def _preferred_account_id(self) -> int | None:
+        """Which counterparty account to keep selected across a rebuild.
 
         Whatever the form already holds, or when it holds nothing — the first
         fill, or a cash account whose currency dropped it — the account being
         edited. An edit therefore opens on the row's own account rather than on
         whichever happens to be first.
         """
-        selected = self._selected_account_id(self._payment_combo)
+        selected = self._selected_account_id(self._account_combo)
         if selected is not None:
             return selected
         if self._original is not None:
-            return self._original.payment_account_id
+            return self._original.account_id
         return None
 
     # ------------------------------------------------------------------ helpers
     def _currency_options(self) -> dict[int, str]:
-        """The currencies a payment can be made in, as id to display label.
+        """The currencies a transaction can be made in, as id to display label.
 
-        Only currencies holding an asset account: a payment comes out of one, so
-        a currency with none could never fill the cash picker. Built from the
-        accounts, which are the only currency data the caller supplies, and keyed
-        by id so each currency appears once, where its first account does.
+        Only currencies holding an asset account: every transaction posts
+        through one, so a currency with none could never fill the cash picker.
+        Built from the accounts, which are the only currency data the caller
+        supplies, and keyed by id so each currency appears once, where its first
+        account does.
         """
         options: dict[int, str] = {}
         for account in self._accounts:
@@ -269,7 +278,7 @@ class PaymentDialog(QDialog):
 
         Read from its cash account rather than stored on the transaction, which
         holds only the two account ids — the cash account being the one that
-        carries the currency a payment is made in.
+        carries the currency a transaction is made in.
         """
         if self._original is None:
             return None
@@ -321,20 +330,19 @@ class PaymentDialog(QDialog):
             raise ValidationError(
                 "A cash account must be selected.", field="cash_account_id"
             )
-        paid = self._payment_combo.currentData()
-        if not isinstance(paid, AccountView):
+        counterparty = self._account_combo.currentData()
+        if not isinstance(counterparty, AccountView):
             raise ValidationError(
-                "An account to pay must be selected.", field="payment_account_id"
+                "The other account must be selected.", field="account_id"
             )
 
         values = {
             "datetime": self._datetime_edit.dateTime().toPyDateTime(),
-            # Not a field on the form: a payment is the only transaction this
-            # application records, and its direction follows from the type
-            # rather than from anything the user could get wrong.
-            "type": TransactionType.PAYMENT,
+            # Not a field on the form: the direction follows from the type this
+            # dialog was opened for, not from anything the user could get wrong.
+            "type": self._transaction_type,
             "cash_account_id": cash.id,
-            "payment_account_id": paid.id,
+            "account_id": counterparty.id,
             "amount": amount,
             "notes": self._notes_edit.toPlainText(),
         }
@@ -348,6 +356,6 @@ class PaymentDialog(QDialog):
             "datetime": self._datetime_edit,
             "amount": self._amount_edit,
             "cash_account_id": self._cash_combo,
-            "payment_account_id": self._payment_combo,
+            "account_id": self._account_combo,
             "notes": self._notes_edit,
         }

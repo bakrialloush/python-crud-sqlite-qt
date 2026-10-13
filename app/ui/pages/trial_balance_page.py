@@ -153,7 +153,7 @@ class TrialBalancePage(QWidget):
         self._refresh.clicked.connect(lambda: self.reload())
 
     def _prefill_period(self) -> None:
-        """Open on the days the stored payments cover.
+        """Open on the days the stored transactions cover.
 
         Nothing stored yet leaves both fields on today, which reports the same
         thing an empty range would while still reading as a date someone chose.

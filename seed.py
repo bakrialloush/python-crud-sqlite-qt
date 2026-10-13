@@ -48,9 +48,10 @@ USD = Currency(
 # "الصندوق" — the till, the account cash is held in.
 CASH_ACCOUNT_NAME = "الصندوق"
 
-# "المصروفات" — expenses. The seed needs a second account because a payment
+# "المصروفات" — expenses. The seed needs a second account because a transaction
 # moves money between two of them: with the till alone there would be nothing to
-# pay, and the Payments tab would be inert on a fresh database.
+# pay or receive, and the Payments and Receipts tabs would be inert on a fresh
+# database.
 EXPENSES_ACCOUNT_NAME = "المصروفات"
 
 
@@ -64,9 +65,9 @@ def clear(
 
     The order is the reverse of the foreign keys, and the foreign keys are what
     insist on it: both of a transaction's account columns, and the account on
-    every split, are ON DELETE RESTRICT — so an account a payment touched cannot
-    go until the payment does, and a currency cannot go while an account is held
-    in it. Only the command line calls this.
+    every split, are ON DELETE RESTRICT — so an account a transaction touched
+    cannot go until the transaction does, and a currency cannot go while an
+    account is held in it. Only the command line calls this.
     """
     for transaction in transactions.list_all():
         transactions.delete(transaction.id)

@@ -59,9 +59,9 @@ CREATE INDEX IF NOT EXISTS idx_accounts_currency ON accounts (currency_id)
 # ``datetime.fromisoformat``. ``amount`` is TEXT for the same reason
 # ``currencies.rate`` is: an exact ``Decimal``, not a binary float.
 #
-# Both account columns are ON DELETE RESTRICT, so an account that a payment
+# Both account columns are ON DELETE RESTRICT, so an account that a transaction
 # touched cannot be deleted out from under its ledger history. The service
-# refuses this first, with a message naming how many payments block it; the
+# refuses this first, with a message naming how many transactions block it; the
 # foreign key is the backstop for a caller that bypasses the service.
 #
 # The CHECK on ``type`` mirrors the accounts table's, and carries the same
@@ -69,21 +69,25 @@ CREATE INDEX IF NOT EXISTS idx_accounts_currency ON accounts (currency_id)
 # later means rebuilding this table rather than adding an entry to
 # :data:`COLUMN_ADDITIONS`. It is kept because the repository writes the column
 # from an enum, and the constraint is what holds that true for any other writer.
+#
+# ``account_id`` is the counterparty — the account paid for a payment, the
+# account received from for a receipt — so it is named for the side it holds
+# rather than for one direction. ``cash_account_id`` is always the asset side.
 TRANSACTIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS transactions (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    datetime           TEXT    NOT NULL,
-    type               TEXT    NOT NULL CHECK (type IN ('payment')),
-    cash_account_id    INTEGER NOT NULL REFERENCES accounts (id) ON DELETE RESTRICT,
-    payment_account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE RESTRICT,
-    amount             TEXT    NOT NULL,
-    notes              TEXT    NOT NULL DEFAULT ''
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    datetime        TEXT    NOT NULL,
+    type            TEXT    NOT NULL CHECK (type IN ('payment', 'receipt')),
+    cash_account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE RESTRICT,
+    account_id      INTEGER NOT NULL REFERENCES accounts (id) ON DELETE RESTRICT,
+    amount          TEXT    NOT NULL,
+    notes           TEXT    NOT NULL DEFAULT ''
 )
 """
 
 # One row per account per transaction: the double-entry posting. The amounts are
-# signed — positive debits, negative credits — so the two rows of a payment sum
-# to zero and the sign, rather than the column order, says which is which.
+# signed — positive debits, negative credits — so the two rows of a transaction
+# sum to zero and the sign, rather than the column order, says which is which.
 #
 # ON DELETE CASCADE, unlike the account columns above: a split has no life of
 # its own and is meaningless without the transaction that posted it, so deleting
@@ -98,7 +102,7 @@ CREATE TABLE IF NOT EXISTS splits (
 )
 """
 
-# The payments table is ordered newest first, which is how a ledger is read.
+# The transactions table is ordered newest first, which is how a ledger is read.
 TRANSACTIONS_DATETIME_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_transactions_datetime ON transactions (datetime)
 """

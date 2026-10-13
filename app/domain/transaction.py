@@ -24,7 +24,7 @@ class Transaction:
     datetime: DateTime
     type: TransactionType
     cash_account_id: int
-    payment_account_id: int
+    account_id: int
     amount: Decimal
     notes: str = ""
     # Last, for the same reason as ``Currency.id``.
@@ -33,17 +33,20 @@ class Transaction:
     def splits(self) -> tuple[Split, Split]:
         """The two postings this transaction makes.
 
-        The single definition of how a transaction of this type posts: the
-        account being paid is debited and the cash account credited, so the two
-        always sum to zero. The repository writes exactly these, and a later
-        balance figure would read them — neither re-derives the rule.
+        The single definition of how a transaction of this type posts: each of
+        the two accounts takes the sign its type gives that side of the posting
+        — the counterparty ``counterparty_sign``, the cash account ``cash_sign``
+        — so the two always sum to zero. A payment's cash side is a credit and a
+        receipt's a debit, and the difference lives on the type rather than
+        here. The repository writes exactly these, and a later balance figure
+        would read them — neither re-derives the rule.
 
         ``amount`` is positive by validation, so applying the type's signs is
         what turns it into a debit and a credit.
         """
         return (
             Split(
-                account_id=self.payment_account_id,
+                account_id=self.account_id,
                 amount=self.amount * self.type.counterparty_sign,
             ),
             Split(
@@ -71,13 +74,13 @@ class Transaction:
                 "A valid transaction type must be selected.", field="type"
             )
         self._require_account_selected("cash_account_id", self.cash_account_id)
-        self._require_account_selected("payment_account_id", self.payment_account_id)
-        if self.cash_account_id == self.payment_account_id:
+        self._require_account_selected("account_id", self.account_id)
+        if self.cash_account_id == self.account_id:
             # A posting that debits and credits the same account moves nothing,
             # and the two splits would cancel out unseen.
             raise ValidationError(
-                "The cash account and the account being paid must be different.",
-                field="payment_account_id",
+                "The cash account and the other account must be different.",
+                field="account_id",
             )
         require_positive_decimal(self.amount, field="amount", label="Amount")
         require_notes(self.notes)
