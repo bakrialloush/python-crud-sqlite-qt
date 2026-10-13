@@ -6,9 +6,10 @@ while the table models, the dialogs and the tooltips all share one definition.
 
 from __future__ import annotations
 
+from datetime import datetime as DateTime
 from decimal import Decimal
 
-from app.domain.enums import AccountType, RateMethod
+from app.domain.enums import AccountType, RateMethod, TransactionType
 
 _ACCOUNT_TYPE_LABELS: dict[AccountType, str] = {
     AccountType.ASSET: "Asset",
@@ -22,6 +23,17 @@ _RATE_METHOD_LABELS: dict[RateMethod, str] = {
     RateMethod.MUL: "multiply",
     RateMethod.DIV: "divide",
 }
+
+_TRANSACTION_TYPE_LABELS: dict[TransactionType, str] = {
+    TransactionType.PAYMENT: "Payment",
+}
+
+#: The timestamp format, spelled for Qt's date widgets. The table and the form
+#: both render through it, and it has to keep agreeing with the storage format
+#: in ``app.repositories.transaction_repository`` — a mismatch would show the
+#: user a time the database does not hold. The layers cannot share a constant
+#: without breaking the import rule, so the two are kept in step by hand.
+DATETIME_QT_FORMAT = "yyyy-MM-dd HH:mm"
 
 
 def account_type_label(account_type: AccountType) -> str:
@@ -37,6 +49,20 @@ def rate_method_label(method: RateMethod) -> str:
 def rate_method_description(method: RateMethod) -> str:
     """How the method combines an amount and a rate, for the dialog and tooltips."""
     return f"amount {method.symbol} rate"
+
+
+def transaction_type_label(transaction_type: TransactionType) -> str:
+    """Human-readable transaction type, e.g. ``"Payment"``."""
+    return _TRANSACTION_TYPE_LABELS[transaction_type]
+
+
+def format_datetime(value: DateTime) -> str:
+    """Render a timestamp for display, in the shape the database stores.
+
+    Deliberately the same text as the stored value: what the user reads in the
+    table is what an edit would put back unchanged.
+    """
+    return value.strftime("%Y-%m-%d %H:%M")
 
 
 def format_decimal(value: Decimal) -> str:

@@ -38,3 +38,28 @@ class AccountType(str, Enum):
     EQUITY = "equity"
     REVENUE = "revenue"
     EXPENSE = "expense"
+
+
+class TransactionType(str, Enum):
+    """How a transaction moves money, and which side of it is the debit.
+
+    A payment takes money out of the cash account and posts it to the account
+    being paid: the cash account is credited (a negative split) and the payment
+    account debited (a positive one).
+
+    The direction lives on the member rather than in the form or the entity so
+    that the rule has one home: ``Transaction.splits`` reads the signs from
+    here, and a second type added later cannot quietly disagree with the first.
+    """
+
+    PAYMENT = "payment"
+
+    @property
+    def cash_sign(self) -> int:
+        """The sign of the cash account's split. Negative: a credit."""
+        return -1
+
+    @property
+    def counterparty_sign(self) -> int:
+        """The sign of the other account's split. Positive: a debit."""
+        return 1

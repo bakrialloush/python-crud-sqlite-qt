@@ -16,6 +16,9 @@ from app.domain.errors import ValidationError
 
 MAX_NAME_LENGTH = 60
 
+#: Notes are free text and optional, so only their length is a rule.
+MAX_NOTES_LENGTH = 500
+
 # One to ten non-space characters, upper-cased for comparison: "USD", "BTC",
 # but also symbols like "$" or "€" and mixed forms like "US$".
 CODE_PATTERN = re.compile(r"^\S{1,10}$")
@@ -59,13 +62,34 @@ def require_currency_code(value: str) -> None:
         )
 
 
+def require_positive_decimal(value: Decimal, *, field: str, label: str) -> None:
+    """Require a finite :class:`~decimal.Decimal` greater than zero.
+
+    ``label`` names the field as the user sees it, so the message reads "Amount
+    must be greater than zero". Each caller keeps its own name for the value
+    while the rule itself — and the wording of the rule — stays in one place.
+    """
+    if not isinstance(value, Decimal) or not value.is_finite():
+        raise ValidationError(f"{label} must be a number.", field=field)
+    if value <= 0:
+        raise ValidationError(f"{label} must be greater than zero.", field=field)
+
+
 def require_positive_rate(value: Decimal) -> None:
     """Require a finite rate greater than zero.
 
     Zero is rejected because ``RateMethod.DIV`` would divide by it — this rule is
     what makes ``Currency.convert`` safe on the divide path.
     """
-    if not isinstance(value, Decimal) or not value.is_finite():
-        raise ValidationError("Rate must be a number.", field="rate")
-    if value <= 0:
-        raise ValidationError("Rate must be greater than zero.", field="rate")
+    require_positive_decimal(value, field="rate", label="Rate")
+
+
+def require_notes(value: str) -> None:
+    """Require notes within :data:`MAX_NOTES_LENGTH`, once trimmed.
+
+    Blank is allowed: notes are optional, and only their length is a rule.
+    """
+    if len(value.strip()) > MAX_NOTES_LENGTH:
+        raise ValidationError(
+            f"Notes must be {MAX_NOTES_LENGTH} characters or fewer.", field="notes"
+        )

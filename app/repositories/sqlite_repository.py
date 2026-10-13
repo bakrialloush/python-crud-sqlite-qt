@@ -30,6 +30,9 @@ class SqliteRepository(Generic[T], ABC):
     * ``table``   — the table name.
     * ``columns`` — the writable columns, in the order :meth:`_to_parameters`
       returns them. The primary key is not included; it is handled here.
+
+    An entity that owns child rows overrides :meth:`_write_owned_rows` as well;
+    every other subclass needs nothing beyond the three names above.
     """
 
     table: ClassVar[str]
@@ -77,8 +80,11 @@ class SqliteRepository(Generic[T], ABC):
                 f"INSERT INTO {self.table} ({column_list}) VALUES ({placeholders})",
                 self._to_parameters(entity),
             )
-            new_id = cursor.lastrowid
-        return replace(entity, id=new_id)
+            # Stamped and synced inside the transaction, so the id the owned
+            # rows are written against is the same one that gets committed.
+            saved = replace(entity, id=cursor.lastrowid)
+            self._write_owned_rows(cursor, saved)
+        return saved
 
     def update(self, entity: T) -> T:
         """Overwrite the stored row matching ``entity.id``."""
@@ -94,6 +100,7 @@ class SqliteRepository(Generic[T], ABC):
             )
             if cursor.rowcount == 0:
                 raise NotFoundError(f"No {type(entity).__name__} with id {entity_id}.")
+            self._write_owned_rows(cursor, entity)
         return entity
 
     def delete(self, entity_id: int) -> bool:
@@ -101,6 +108,26 @@ class SqliteRepository(Generic[T], ABC):
         with self._database.transaction() as cursor:
             cursor.execute(f"DELETE FROM {self.table} WHERE id = ?", (entity_id,))
             return cursor.rowcount > 0
+
+    def _write_owned_rows(self, cursor: sqlite3.Cursor, entity: T) -> None:
+        """Write any rows this entity owns, inside this same transaction.
+
+        Called by both :meth:`add` and :meth:`update`, after the entity's own row
+        exists and carrying its id — so an implementation that rewrites its
+        children wholesale works for either, and the children can never be
+        half-written alongside the row they belong to.
+
+        Nothing by default: most entities own no other rows. An owner overrides
+        this to write its children; there is deliberately no delete counterpart,
+        because children carry ``ON DELETE CASCADE`` and the database removes
+        them with the row. Overriding :meth:`add` and calling ``super().add()``
+        is safe — the hook still runs inside that one transaction.
+
+        Args:
+            cursor: the open cursor. Writing through it is what keeps the child
+                rows in the same transaction as the entity.
+            entity: the entity being written, with its id already set.
+        """
 
     # ------------------------------------------------------------------ helpers
     @property

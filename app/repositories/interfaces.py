@@ -12,7 +12,9 @@ from typing import Protocol, TypeVar
 
 from app.domain.account import Account
 from app.domain.currency import Currency
-from app.domain.views import AccountView
+from app.domain.split import Split
+from app.domain.transaction import Transaction
+from app.domain.views import AccountView, TransactionView
 
 T = TypeVar("T")
 
@@ -55,3 +57,27 @@ class AccountRepository(ReadRepository[Account], WriteRepository[Account], Proto
 
     def count_by_currency(self, currency_id: int) -> int:
         """How many accounts use ``currency_id``. Zero means it is safe to delete."""
+
+
+class TransactionRepository(
+    ReadRepository[Transaction], WriteRepository[Transaction], Protocol
+):
+    """Transactions, plus the queries the service rules need.
+
+    Writing a transaction is not a single insert: the two splits that make it a
+    double-entry posting go with it, in the same database transaction. That is
+    the implementation's business — ``add`` and ``update`` here mean "store this
+    transaction and its postings", not "store this one row".
+    """
+
+    def list_all_views(self) -> list[TransactionView]:
+        """Transactions joined with the names of the accounts they post to."""
+
+    def list_splits(self, transaction_id: int) -> list[Split]:
+        """The splits ``transaction_id`` posted, in a stable order."""
+
+    def count_by_account(self, account_id: int) -> int:
+        """How many transactions touch ``account_id``, on either side.
+
+        Zero means the account has no ledger history and is safe to delete.
+        """

@@ -70,3 +70,9 @@ class AccountPage(CrudPage[AccountView]):
 
     def _describe(self, item: AccountView) -> str:
         return f"{item.name} ({item.currency_code})"
+
+    def _delete_refusal(self, item: AccountView) -> str | None:
+        # Asked of the service rather than decided here: the reason needs a
+        # count of the payments that touch the account, and it is the same
+        # sentence the service raises if the delete is attempted anyway.
+        return self._accounts.delete_refusal(item.id)

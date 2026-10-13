@@ -4,25 +4,37 @@ from __future__ import annotations
 
 from app.domain.account import Account
 from app.domain.currency import Currency
-from app.domain.errors import NotFoundError, ValidationError
+from app.domain.errors import (
+    ConstraintViolation,
+    NotFoundError,
+    ReferentialIntegrityError,
+    ValidationError,
+)
 from app.domain.views import AccountView
-from app.repositories.interfaces import AccountRepository, CurrencyRepository
+from app.repositories.interfaces import (
+    AccountRepository,
+    CurrencyRepository,
+    TransactionRepository,
+)
 
 
 class AccountService:
     """Create, read, update and delete accounts.
 
-    An account's own rules live on the entity. The rule here is the one that
-    needs another entity: that the selected currency actually exists.
+    An account's own rules live on the entity. The rules here are the ones that
+    need another entity: that the selected currency actually exists, and that no
+    payment has posted to the account before it is removed.
     """
 
     def __init__(
         self,
         accounts: AccountRepository,
         currencies: CurrencyRepository,
+        transactions: TransactionRepository,
     ) -> None:
         self._accounts = accounts
         self._currencies = currencies
+        self._transactions = transactions
 
     def list_all(self) -> list[AccountView]:
         """Every account, with its currency's code and name for display."""
@@ -70,10 +82,56 @@ class AccountService:
         return self._accounts.update(candidate)
 
     def delete(self, account_id: int) -> None:
-        """Delete an account.
+        """Delete an account that no payment has posted to.
 
         Raises:
             NotFoundError: if there was no such account.
+            ReferentialIntegrityError: if a payment still posts to it.
         """
-        if not self._accounts.delete(account_id):
-            raise NotFoundError(f"No account with id {account_id}.")
+        account = self.get(account_id)
+
+        refusal = self._refusal_for(account)
+        if refusal is not None:
+            raise ReferentialIntegrityError(refusal)
+
+        try:
+            self._accounts.delete(account_id)
+        except ConstraintViolation as error:
+            # The count above and the delete are not atomic, and a caller could
+            # bypass this service entirely. The foreign key is the backstop that
+            # keeps the rule true either way.
+            raise ReferentialIntegrityError(
+                f"{account.name} is still referenced and cannot be deleted."
+            ) from error
+
+    def delete_refusal(self, account_id: int) -> str | None:
+        """Why the account cannot be deleted, or ``None`` when it can.
+
+        The page shows this on the disabled Delete button. It is presentation
+        only: ``_refusal_for`` decides nothing the service does not already
+        decide, and :meth:`delete` refuses for the same reason.
+        """
+        account = self._accounts.get(account_id)
+        if account is None:
+            return None
+        return self._refusal_for(account)
+
+    def _refusal_for(self, account: Account) -> str | None:
+        """The reason one account cannot go, from its payments alone.
+
+        One sentence, worded once, so the tooltip the user reads before acting
+        and the error they would get after are the same rule said the same way.
+        """
+        if account.id is None:
+            # Never stored, so nothing can refer to it. Asked to refuse anyway.
+            return None
+
+        blockers = self._transactions.count_by_account(account.id)
+        if not blockers:
+            return None
+        noun = "payment" if blockers == 1 else "payments"
+        them = "it" if blockers == 1 else "them"
+        return (
+            f"{account.name} is used by {blockers} {noun} and cannot be deleted. "
+            f"Delete {them} first."
+        )
