@@ -26,12 +26,33 @@ python main.py
 Requires Python 3.9 or newer. The database is created on first run at
 `data/ledger.db`, next to the code. Delete that file to start over.
 
+## Seeding it
+
+The app populates itself on startup: a database that holds no currencies *and*
+no accounts — a missing file, or one the user emptied — gets the seed rows before
+the window opens, so it never comes up on two blank tables. Once anything is
+stored, it is left alone; the check is per database rather than per table, so
+deleting the seed account does not bring it back on the next launch.
+
+```sh
+python seed.py
+```
+
+does the same thing on demand, but clears both tables first — so it is safe to
+re-run and always leaves the same two rows, with the same ids. Run it when you
+want the sample data back, not merely when it is missing.
+
+Either way you get one currency (`USD`, rate `1`, `mul`) and one asset account,
+`الصندوق`, denominated in it, written through the services rather than raw SQL —
+so the seed faces the same validation the UI does. Treat the database as
+disposable.
+
 ## Layers
 
 Dependencies point in one direction only:
 
 ```
-main.py  (composition root)
+main.py, seed.py  (composition roots)
    │
    ├─> ui/ ──────────> services/ ──> repositories/interfaces.py   (Protocols)
    │                      │                    ▲
@@ -48,6 +69,7 @@ main.py  (composition root)
 | `app/core/` | SQLite connection, pragmas, schema | `domain.errors` |
 | `app/ui/` | Widgets, table models, dialogs | `domain`, `services` |
 | `main.py` | Wiring only | everything |
+| `seed.py` | The sample rows, written on startup and on demand | `app` layers |
 
 The rule that makes the separation real, and which these two commands confirm —
 both must find nothing:
