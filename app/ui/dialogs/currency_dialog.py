@@ -87,7 +87,7 @@ class CurrencyDialog(QDialog):
 
         self._code_edit = QLineEdit()
         self._code_edit.setPlaceholderText("USD")
-        self._code_edit.setMaxLength(6)
+        self._code_edit.setMaxLength(10)
 
         # A plain line edit rather than a spin box: a QDoubleSpinBox would route
         # the rate through a C double and reintroduce the rounding that Decimal

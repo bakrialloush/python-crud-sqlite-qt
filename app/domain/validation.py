@@ -16,8 +16,9 @@ from app.domain.errors import ValidationError
 
 MAX_NAME_LENGTH = 60
 
-# Two to six letters, compared upper-case: "USD", "EUR", "BTC".
-CODE_PATTERN = re.compile(r"^[A-Z]{2,6}$")
+# One to ten non-space characters, upper-cased for comparison: "USD", "BTC",
+# but also symbols like "$" or "€" and mixed forms like "US$".
+CODE_PATTERN = re.compile(r"^\S{1,10}$")
 
 
 def parse_decimal(text: str, *, field: str) -> Decimal:
@@ -50,9 +51,12 @@ def require_name(value: str) -> None:
 
 
 def require_currency_code(value: str) -> None:
-    """Require a 2-6 letter code, compared case-insensitively."""
+    """Require a 1-10 character code with no spaces, up-cased for comparison."""
     if not CODE_PATTERN.match(value.strip().upper()):
-        raise ValidationError("Code must be 2-6 letters, for example USD.", field="code")
+        raise ValidationError(
+            "Code must be 1-10 characters with no spaces, for example USD or $.",
+            field="code",
+        )
 
 
 def require_positive_rate(value: Decimal) -> None:
