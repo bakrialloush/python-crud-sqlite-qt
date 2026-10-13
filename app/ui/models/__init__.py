@@ -1,1 +1,1 @@
-"""Table models backing the CRUD tables."""
+"""Table models backing the tabs."""

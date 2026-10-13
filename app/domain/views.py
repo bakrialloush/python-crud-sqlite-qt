@@ -45,3 +45,33 @@ class TransactionView:
     cash_account_name: str
     payment_account_id: int
     payment_account_name: str
+
+
+@dataclass(frozen=True)
+class TrialBalanceRow:
+    """One account's position over a period, in its own currency and in base.
+
+    ``balance`` is signed the way the ledger stores it — debits positive,
+    credits negative — so a positive figure is a debit balance. Which column of
+    the report it lands in follows from that sign, and stays out of this model:
+    placing a balance is presentation, not a fact about the account.
+    """
+
+    account_id: int
+    account_name: str
+    account_type: AccountType
+    currency_code: str
+    balance: Decimal
+    #: ``balance`` converted into the base currency, rounded to cents.
+    in_base: Decimal
+
+
+@dataclass(frozen=True)
+class TrialBalance:
+    """A whole trial balance: one row per account, over one period."""
+
+    rows: tuple[TrialBalanceRow, ...]
+    #: The currency each row's ``in_base`` is expressed in, for the column header.
+    base_code: str
+    #: The sum of the rows' ``in_base``. Zero means the report balances.
+    total_in_base: Decimal

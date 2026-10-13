@@ -8,6 +8,8 @@ naming them.
 
 from __future__ import annotations
 
+from datetime import datetime as DateTime
+from decimal import Decimal
 from typing import Protocol, TypeVar
 
 from app.domain.account import Account
@@ -75,6 +77,23 @@ class TransactionRepository(
 
     def list_splits(self, transaction_id: int) -> list[Split]:
         """The splits ``transaction_id`` posted, in a stable order."""
+
+    def net_by_account(
+        self, start: DateTime, end: DateTime
+    ) -> dict[int, Decimal]:
+        """Each account's net position over the transactions in ``[start, end]``.
+
+        The sum of that account's signed splits — debits positive, credits
+        negative. Only accounts that posted in the period appear, so a caller
+        wanting every account supplies its own zero for the rest.
+        """
+
+    def date_bounds(self) -> tuple[DateTime, DateTime] | None:
+        """The earliest and latest stored transaction times.
+
+        ``None`` when nothing is stored, which is what lets a report open on the
+        period the data actually covers without a second query to count rows.
+        """
 
     def count_by_account(self, account_id: int) -> int:
         """How many transactions touch ``account_id``, on either side.

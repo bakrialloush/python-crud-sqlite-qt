@@ -53,6 +53,17 @@ other rate would be left quoting a currency that is not there. Both rules sit in
 the service and the entity, with a partial unique index (`WHERE is_base = 1`)
 holding the one-base rule underneath them.
 
+A **trial balance** reports every account's position over a period. An account's
+figure is nothing but the sum of the splits posted to it — debits positive,
+credits negative — so the report reads the ledger the payments wrote rather than
+keeping a balance of its own. Accounts may be held in more than one currency, so
+each row carries its own figure *and* a second one converted into the base: the
+converted column is what the footer totals, since adding amounts in different
+currencies would mean nothing. Converting into the base is the inverse of a
+currency's rate (`mul` by a rate is undone by dividing by it), and each converted
+figure is rounded to cents before it is added, so what the footer sums is what
+the table shows.
+
 ## Running it
 
 ```sh
@@ -190,6 +201,19 @@ column it never had.
 `setFilterKeyColumn(-1)` already matches every column's display text,
 case-insensitively.
 
+**Money is added in Python, not in SQL.** `splits.amount` is `TEXT` holding an
+exact `Decimal`, so SQLite's `SUM` would coerce it to a `REAL` and lose the
+precision the column type exists to preserve. The trial balance's repository
+method filters the rows by date and the walk over them adds `Decimal` to
+`Decimal`, which is why the report can be trusted to the cent.
+
+**A read-only tab is not a CRUD tab.** The trial balance has no toolbar, no
+dialog and nothing to write, so it does not extend `CrudPage` — it shares only
+the table helpers (`build_table_view`, `build_filter_proxy`) and the table model
+base, and the pages that *do* write reload it through their `data_changed`
+signal. Its period filter and its search box stay independent: the dates decide
+what the service reads, the search decides what the proxy displays.
+
 **A light theme that stays light.** `Fusion` plus an explicit `QPalette` plus a
 stylesheet. The native Windows 11 style follows the operating system's
 dark-mode setting and ignores much of QSS, so the app would otherwise come up
@@ -209,3 +233,6 @@ dark for anyone running Windows in dark mode.
   to one currency — enforced in the service, not only in the picker
 - Deleting an account a payment posted to is refused, with the reason on the
   disabled button rather than in a message box afterwards
+- A Trial Balance tab: every account's net position over a date range, shown in
+  its own currency with an `In Base` column, orderable by account type, with a
+  hide-zero-balances toggle and live search

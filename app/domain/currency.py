@@ -40,6 +40,16 @@ class Currency:
         """Convert ``amount`` from the base currency into this one."""
         return self.method.apply(amount, self.rate)
 
+    def convert_to_base(self, amount: Decimal) -> Decimal:
+        """Convert ``amount`` from this currency back into the base currency.
+
+        The inverse of :meth:`convert`, and what the trial balance needs: the
+        base is the currency the report totals in, so every account's own
+        figure has to come back to it before the column can be summed. The base
+        currency is the identity here, as it is for :meth:`convert`.
+        """
+        return self.method.inverse.apply(amount, self.rate)
+
     def normalized(self) -> Currency:
         """Return a copy with cosmetic noise stripped from the text fields.
 

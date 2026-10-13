@@ -152,6 +152,56 @@ class SqliteTransactionRepository(SqliteRepository[Transaction]):
             for row in rows
         ]
 
+    def net_by_account(
+        self, start: DateTime, end: DateTime
+    ) -> dict[int, Decimal]:
+        """The sum of each account's splits over ``[start, end]``, exactly.
+
+        Added up here rather than with SQL ``SUM``: ``amount`` is TEXT holding an
+        exact ``Decimal``, and SQLite would coerce it to a REAL to add it, which
+        is the very precision loss the column type exists to avoid. The database
+        filters the rows; Python adds them without leaving Decimal.
+
+        The bounds compare as text, which is the same order as time because the
+        stored format is zero-padded, most significant part first.
+        """
+        rows = self._database.query(
+            """
+            SELECT s.account_id AS account_id, s.amount AS amount
+            FROM splits AS s
+            JOIN transactions AS t ON t.id = s.transaction_id
+            WHERE t.datetime >= ? AND t.datetime <= ?
+            """,
+            (start.strftime(DATETIME_FORMAT), end.strftime(DATETIME_FORMAT)),
+        )
+        totals: dict[int, Decimal] = {}
+        for row in rows:
+            account_id = row["account_id"]
+            totals[account_id] = totals.get(account_id, Decimal(0)) + Decimal(
+                row["amount"]
+            )
+        return totals
+
+    def date_bounds(self) -> tuple[DateTime, DateTime] | None:
+        """The earliest and latest transaction times, or ``None`` when empty.
+
+        ``MIN`` and ``MAX`` over the text column are the chronological extremes
+        for the same reason the range comparison above is: the format sorts as
+        text the way it reads as time.
+        """
+        # An aggregate with no GROUP BY always returns exactly one row, so this
+        # reads it rather than guarding against an empty result set.
+        rows = self._database.query(
+            "SELECT MIN(datetime) AS first, MAX(datetime) AS last FROM transactions"
+        )
+        first, last = rows[0]["first"], rows[0]["last"]
+        if first is None or last is None:
+            return None
+        return (
+            DateTime.strptime(first, DATETIME_FORMAT),
+            DateTime.strptime(last, DATETIME_FORMAT),
+        )
+
     def count_by_account(self, account_id: int) -> int:
         """How many transactions touch ``account_id``, on either side.
 

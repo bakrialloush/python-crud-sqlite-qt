@@ -25,6 +25,16 @@ class RateMethod(str, Enum):
         return amount * rate
 
     @property
+    def inverse(self) -> RateMethod:
+        """The method that undoes this one, converting an amount back again.
+
+        :meth:`apply` works in the direction the rate was quoted in. The way
+        back is the same rate with the opposite operator: dividing by a rate
+        undoes multiplying by it, and the other way round.
+        """
+        return RateMethod.DIV if self is RateMethod.MUL else RateMethod.MUL
+
+    @property
     def symbol(self) -> str:
         """The arithmetic sign, for tooltips and labels."""
         return "/" if self is RateMethod.DIV else "*"

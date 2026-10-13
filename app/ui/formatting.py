@@ -35,6 +35,11 @@ _TRANSACTION_TYPE_LABELS: dict[TransactionType, str] = {
 #: without breaking the import rule, so the two are kept in step by hand.
 DATETIME_QT_FORMAT = "yyyy-MM-dd HH:mm"
 
+#: The date-only format, for the reports that filter by day rather than instant.
+#: The leading half of the timestamp format above, so the two cannot read as
+#: different dates for the same value.
+DATE_QT_FORMAT = "yyyy-MM-dd"
+
 
 def account_type_label(account_type: AccountType) -> str:
     """Human-readable account type, e.g. ``"Liability"``."""

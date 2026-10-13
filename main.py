@@ -20,6 +20,7 @@ from app.repositories.transaction_repository import SqliteTransactionRepository
 from app.services.account_service import AccountService
 from app.services.currency_service import CurrencyService
 from app.services.transaction_service import TransactionService
+from app.services.trial_balance_service import TrialBalanceService
 from app.ui.main_window import MainWindow
 from app.ui.theme import apply_light_theme
 from seed import seed_if_empty
@@ -56,6 +57,11 @@ def main() -> int:
         transaction_service = TransactionService(
             transaction_repository, account_repository
         )
+        # The report reads all three repositories and writes none of them, so it
+        # is the one service with no rule of its own to enforce.
+        trial_balance_service = TrialBalanceService(
+            account_repository, currency_repository, transaction_repository
+        )
 
         # First run, or a database the user emptied: without this the app opens
         # on three blank tables. Only ever inserts, so it cannot discard data.
@@ -69,7 +75,11 @@ def main() -> int:
             )
 
         window = MainWindow(
-            currency_service, account_service, transaction_service, database.path
+            currency_service,
+            account_service,
+            transaction_service,
+            trial_balance_service,
+            database.path,
         )
         window.show()
         return app.exec()
