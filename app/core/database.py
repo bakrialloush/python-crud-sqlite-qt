@@ -11,8 +11,14 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
-from app.core.schema import SCHEMA_STATEMENTS
+from app.core.schema import COLUMN_ADDITIONS, INDEX_STATEMENTS, TABLE_STATEMENTS
 from app.domain.errors import ConstraintViolation, PersistenceError
+
+
+def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
+    """The columns of ``table``, or an empty set if it does not exist yet."""
+    rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
+    return {row["name"] for row in rows}
 
 
 class Database:
@@ -51,7 +57,14 @@ class Database:
             # RESTRICT on accounts.currency_id is silently ignored.
             connection.execute("PRAGMA foreign_keys = ON")
             connection.row_factory = sqlite3.Row
-            for statement in SCHEMA_STATEMENTS:
+            for statement in TABLE_STATEMENTS:
+                connection.execute(statement)
+            # Between the tables and the indexes: an index may name a column
+            # that only these statements add.
+            for table, column, statement in COLUMN_ADDITIONS:
+                if column not in _column_names(connection, table):
+                    connection.execute(statement)
+            for statement in INDEX_STATEMENTS:
                 connection.execute(statement)
         except (sqlite3.Error, OSError) as error:
             # Do not leak a half-configured connection when the schema fails.

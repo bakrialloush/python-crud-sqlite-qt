@@ -17,14 +17,15 @@ from app.ui.models.base_table_model import BaseTableModel
 
 _ID_COLUMN = 0
 _RATE_COLUMN = 3
+_BASE_COLUMN = 5
 
 _RIGHT_ALIGNED: frozenset[int] = frozenset({_ID_COLUMN, _RATE_COLUMN})
 
 
 class CurrencyTableModel(BaseTableModel[Currency]):
-    """Renders currencies: id, name, code, rate and method."""
+    """Renders currencies: id, name, code, rate, method and the base flag."""
 
-    headers = ("ID", "Name", "Code", "Rate", "Method")
+    headers = ("ID", "Name", "Code", "Rate", "Method", "Base")
 
     _RENDERERS: ClassVar[tuple[Callable[[Currency], str], ...]] = (
         lambda currency: "" if currency.id is None else str(currency.id),
@@ -32,6 +33,7 @@ class CurrencyTableModel(BaseTableModel[Currency]):
         lambda currency: currency.code,
         lambda currency: format_decimal(currency.rate),
         lambda currency: rate_method_label(currency.method),
+        lambda currency: "yes" if currency.is_base else "",
     )
 
     def display(self, item: Currency, column: int) -> str:
@@ -45,4 +47,6 @@ class CurrencyTableModel(BaseTableModel[Currency]):
     def tooltip(self, item: Currency, column: int) -> str | None:
         if column == _RATE_COLUMN:
             return f"1 base unit = {format_decimal(item.rate)} {item.code}"
+        if column == _BASE_COLUMN and item.is_base:
+            return "Every other rate is quoted against this currency."
         return None

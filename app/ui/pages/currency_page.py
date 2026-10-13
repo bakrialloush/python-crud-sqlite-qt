@@ -50,3 +50,8 @@ class CurrencyPage(CrudPage[Currency]):
 
     def _describe(self, item: Currency) -> str:
         return f"{item.code} — {item.name}"
+
+    def _delete_refusal(self, item: Currency) -> str | None:
+        if item.is_base:
+            return f"{item.code} is the base currency and cannot be deleted."
+        return None

@@ -158,7 +158,15 @@ class CrudPage(QWidget, Generic[T]):
         self._refresh_status()
 
     def _on_selection_changed(self, *_: object) -> None:
-        self._toolbar.set_actions_enabled(self.selected_item() is not None)
+        item = self.selected_item()
+        self._toolbar.set_actions_enabled(item is not None)
+        if item is None:
+            # Nothing selected: the line above is the whole answer, and asking
+            # about a row that is not there would re-enable what it disabled.
+            return
+
+        refusal = self._delete_refusal(item)
+        self._toolbar.set_delete_enabled(refusal is None, refusal or "")
 
     # ------------------------------------------------------------------ helpers
     def _after_change(self) -> None:
@@ -204,3 +212,11 @@ class CrudPage(QWidget, Generic[T]):
     def _describe(self, item: T) -> str:
         """One-line description of ``item``, for the delete confirmation."""
         raise NotImplementedError
+
+    def _delete_refusal(self, item: T) -> str | None:
+        """Why ``item`` cannot be deleted, or ``None`` when it can.
+
+        Only the button needs this — the rule itself is the service's, and it
+        holds whether or not anything is disabled here.
+        """
+        return None

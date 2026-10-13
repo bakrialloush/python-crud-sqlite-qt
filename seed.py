@@ -13,27 +13,35 @@ than the user's data.
 
 Both paths go through the services rather than raw SQL, so the seed rows face
 the same validation and foreign keys the UI does — a seed that could not be
-typed into a form is a seed that hides a bug.
+typed into a form is a seed that hides a bug. The one field the form does not
+offer, ``is_base``, is the base currency flag: it says which currency the other
+rates are quoted against, and there is exactly one, so it belongs to the dataset
+rather than to a row the user can edit.
 """
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 from app.config import DEFAULT_DATABASE_PATH
 from app.core.database import Database
 from app.domain.account import Account
-from app.domain.currency import Currency
+from app.domain.currency import BASE_RATE, Currency
 from app.domain.enums import AccountType, RateMethod
 from app.repositories.account_repository import SqliteAccountRepository
 from app.repositories.currency_repository import SqliteCurrencyRepository
 from app.services.account_service import AccountService
 from app.services.currency_service import CurrencyService
 
-# USD is treated as the base currency, so converting an amount into it is the
-# identity: a rate of 1, multiplied. A currency that is not the base would carry
-# the rate that converts the base into it.
-USD = Currency(name="US Dollar", code="USD", rate=Decimal("1"), method=RateMethod.MUL)
+# USD is the base currency: every other rate is a conversion from it, which is
+# why its own conversion is the identity — a rate of 1, multiplied. The other
+# three fields follow from being the base, and ``Currency.validate`` holds them
+# there, so this row is the one an unedited form cannot produce.
+USD = Currency(
+    name="US Dollar",
+    code="USD",
+    rate=BASE_RATE,
+    method=RateMethod.MUL,
+    is_base=True,
+)
 
 # "الصندوق" — the till, the account cash is held in.
 CASH_ACCOUNT_NAME = "الصندوق"
@@ -51,7 +59,9 @@ def clear(
     for account in accounts.list_all():
         accounts.delete(account.id)
     for currency in currencies.list_all():
-        currencies.delete(currency.id)
+        # ``allow_base`` because this run deletes the base only to write it
+        # again a moment later; the service refuses that for every other caller.
+        currencies.delete(currency.id, allow_base=True)
 
     # ``AUTOINCREMENT`` never reuses a value on its own — that is its whole
     # point — so without this the ids would climb on every run even though the
@@ -104,7 +114,7 @@ def main() -> None:
         usd, cash = populate(currencies, accounts)
 
         # ASCII only: the Windows console cannot encode the account name.
-        print(f"currency {usd.code} (id {usd.id})")
+        print(f"currency {usd.code} (id {usd.id}, base)")
         print(f"account  id {cash.id}, type {cash.type.value}, currency {usd.code}")
         print(f"Seeded {database.path}")
     finally:

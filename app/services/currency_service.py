@@ -16,9 +16,9 @@ class CurrencyService:
     """Create, read, update and delete currencies.
 
     Rules intrinsic to a currency (a name, a valid code, a positive rate) live on
-    the entity. The rules here are the ones that need a second entity to decide:
-    whether a code is already taken, and whether any account still refers to a
-    currency.
+    the entity. The rules here are the ones that need the rest of the set to
+    decide: whether a code is already taken, whether any account still refers to
+    a currency, and whether it is the base the others are quoted against.
     """
 
     def __init__(
@@ -72,13 +72,27 @@ class CurrencyService:
         self.validate(candidate)
         return self._currencies.update(candidate)
 
-    def delete(self, currency_id: int) -> None:
+    def delete(self, currency_id: int, *, allow_base: bool = False) -> None:
         """Delete a currency that no account uses.
 
+        Args:
+            currency_id: the currency to delete.
+            allow_base: whether the base currency may go. Only the seeding
+                command passes this, because it deletes the base in order to
+                rebuild it; nothing in the application should.
+
         Raises:
+            ValidationError: if it is the base currency.
             ReferentialIntegrityError: if any account still refers to it.
         """
         currency = self.get(currency_id)
+
+        if currency.is_base and not allow_base:
+            # Every other rate is a conversion from the base, so deleting it
+            # would leave the rest quoting a currency that is not there.
+            raise ValidationError(
+                f"{currency.code} is the base currency and cannot be deleted."
+            )
 
         blockers = self._accounts.count_by_currency(currency_id)
         if blockers:

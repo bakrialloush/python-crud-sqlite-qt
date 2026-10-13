@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QFormLayout,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QRadioButton,
     QVBoxLayout,
@@ -32,6 +33,12 @@ from app.ui.formatting import format_decimal, rate_method_description, rate_meth
 #: Raised by the service to reject a currency; called before the dialog closes.
 CurrencyValidator = Callable[[Currency], None]
 
+#: Shown on the form for the base currency, whose rate and method are fixed.
+BASE_CURRENCY_NOTE = (
+    "The base currency is what every other rate is quoted against, so it always "
+    "converts at a rate of 1, multiplied. Only its name and code can be changed."
+)
+
 
 class CurrencyDialog(QDialog):
     """One form for both creating and editing.
@@ -40,6 +47,9 @@ class CurrencyDialog(QDialog):
     edits it and keeps its id. Validation is injected rather than implemented
     here, so the rules stay in the service — but they run while the form is still
     open, so the user reads the message with the field in front of them.
+
+    The base currency is the one row this form edits only in part: its rate and
+    method are what being the base *means*, so they arrive locked.
     """
 
     def __init__(
@@ -59,9 +69,13 @@ class CurrencyDialog(QDialog):
 
         form = self._build_fields()
         self._populate()
+        self._lock_base_fields()
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        note = self._build_base_note()
+        if note is not None:
+            layout.addWidget(note)
         layout.addWidget(build_button_box(self))
 
     @property
@@ -131,6 +145,34 @@ class CurrencyDialog(QDialog):
         self._code_edit.setText(self._original.code)
         self._rate_edit.setText(format_decimal(self._original.rate))
         self._select_method(self._original.method)
+
+    @property
+    def _editing_base(self) -> bool:
+        """Whether this form is editing the base currency."""
+        return self._original is not None and self._original.is_base
+
+    def _lock_base_fields(self) -> None:
+        """Grey out the rate and method when editing the base currency.
+
+        They are not values the base can hold: converting into it is the
+        identity, so its rate is 1 and its method multiply, and
+        ``Currency.validate`` refuses anything else. Disabling rather than
+        hiding keeps the form's shape the same and shows what the base means.
+        """
+        if not self._editing_base:
+            return
+        for widget in (self._rate_edit, self._method_group):
+            widget.setEnabled(False)
+            widget.setToolTip(BASE_CURRENCY_NOTE)
+
+    def _build_base_note(self) -> QLabel | None:
+        """A line saying why the fields above are locked, or ``None`` if none are."""
+        if not self._editing_base:
+            return None
+        note = QLabel(BASE_CURRENCY_NOTE)
+        note.setObjectName("hint")
+        note.setWordWrap(True)
+        return note
 
     def _select_method(self, method: RateMethod) -> None:
         button = self._method_buttons.get(method)

@@ -10,11 +10,22 @@ related models:
 | `code` | `currency_id` → `currencies.id` |
 | `rate` | `type` — `asset`, `liability`, `equity`, `revenue`, `expense` |
 | `method` — `mul`, `div` | |
+| `is_base` — `0`, `1` | |
 
 `rate` and `method` describe a conversion: `method=mul` means an amount is
 multiplied by the rate, `method=div` means it is divided by it. Rates are held as
 `decimal.Decimal` and stored as `TEXT` — SQLite has no `DECIMAL` type, and a
 binary float would corrupt money values.
+
+`is_base` marks the currency the other rates are quoted against. There is
+exactly one, the seed sets it, and it is not a field the form offers: being the
+base is a fact about the set rather than a preference about one row. It also
+fixes its own rate and method — converting an amount into the base is the
+identity — so those two arrive locked on the edit form and are refused by
+`Currency.validate` for any other caller. The base cannot be deleted; every
+other rate would be left quoting a currency that is not there. Both rules sit in
+the service and the entity, with a partial unique index (`WHERE is_base = 1`)
+holding the one-base rule underneath them.
 
 ## Running it
 
@@ -42,10 +53,15 @@ does the same thing on demand, but clears both tables first — so it is safe to
 re-run and always leaves the same two rows, with the same ids. Run it when you
 want the sample data back, not merely when it is missing.
 
-Either way you get one currency (`USD`, rate `1`, `mul`) and one asset account,
-`الصندوق`, denominated in it, written through the services rather than raw SQL —
-so the seed faces the same validation the UI does. Treat the database as
-disposable.
+Either way you get one currency (`USD`, rate `1`, `mul`, the base) and one asset
+account, `الصندوق`, denominated in it, written through the services rather than
+raw SQL — so the seed faces the same validation the UI does. Treat the database
+as disposable.
+
+The database from an older version gains the `is_base` column when it is next
+opened, but as `0`: no existing row is promoted to base, since which currency
+the rates were quoted against is not something the application can infer. Run
+`python seed.py` to get the seed back with its base flag.
 
 ## Layers
 
@@ -102,7 +118,23 @@ removing it would destroy accounts the user never asked to touch. The service
 gives a message naming how many accounts block it, and an
 `ON DELETE RESTRICT` foreign key is the backstop that holds the line even for a
 caller that bypasses the service. `PRAGMA foreign_keys = ON` is set on every
-connection, since SQLite defaults it off per connection.
+connection, since SQLite defaults it off per connection. The base currency is
+refused the same way, and for the same reason: it is referred to by every other
+rate rather than by a row.
+
+**A refused action is disabled, not just rejected.** `CrudPage` hands each row
+to `_delete_refusal`, which returns the reason it cannot be deleted. The page
+turns a reason into a disabled Delete button carrying it as a tooltip, so the
+rule reaches the user before they act rather than in a message box afterwards.
+It is presentation only — `_delete_refusal` decides nothing the service does not
+already decide.
+
+**A column added later carries its own migration.** `CREATE TABLE IF NOT EXISTS`
+leaves an existing table untouched, so `schema.py` also lists the statements
+that add columns to tables that already exist, and `Database.connect` runs each
+one only when its column is missing. That keeps startup idempotent without
+version tracking, and keeps an older database usable instead of failing on a
+column it never had.
 
 **Search needs no subclass.** `QSortFilterProxyModel` with
 `setFilterKeyColumn(-1)` already matches every column's display text,
@@ -120,3 +152,4 @@ dark for anyone running Windows in dark mode.
 - Duplicate currency codes rejected, case-insensitively (`usd` collides with `USD`)
 - Rates validated as positive, finite decimals
 - Accounts cannot be saved without a currency; currencies cannot be deleted while in use
+- The base currency keeps its rate and method, and cannot be deleted

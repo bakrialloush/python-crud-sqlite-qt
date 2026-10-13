@@ -6,11 +6,16 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from app.domain.enums import RateMethod
+from app.domain.errors import ValidationError
 from app.domain.validation import (
     require_currency_code,
     require_name,
     require_positive_rate,
 )
+
+#: The rate of the base currency. Every other rate is expressed as a conversion
+#: *from* the base, so converting an amount into the base changes nothing.
+BASE_RATE = Decimal("1")
 
 
 @dataclass
@@ -21,9 +26,14 @@ class Currency:
     code: str
     rate: Decimal
     method: RateMethod
-    # Declared last so the required fields stay first; a defaulted field may not
-    # precede a required one. This ordering also lets the repository rebuild a
-    # saved entity with ``dataclasses.replace``.
+    # The defaulted fields are declared last; a defaulted field may not precede
+    # a required one. This ordering also lets the repository rebuild a saved
+    # entity with ``dataclasses.replace``.
+    #
+    # ``is_base`` is set by the seed alone. It is not a choice the form offers,
+    # because it is not a property of the currency so much as of the set: it
+    # names the one currency the others are quoted against.
+    is_base: bool = False
     id: int | None = None
 
     def convert(self, amount: Decimal) -> Decimal:
@@ -45,3 +55,15 @@ class Currency:
         require_positive_rate(self.rate)
         if not isinstance(self.method, RateMethod):
             raise ValidationError("Method must be 'mul' or 'div'.", field="method")
+        if self.is_base:
+            # Not a preference: a rate of 1 multiplied is what "the currency the
+            # others are quoted against" means. The form locks both fields, and
+            # this is what holds for a caller that does not go through it.
+            if self.rate != BASE_RATE:
+                raise ValidationError(
+                    "The base currency always converts at a rate of 1.", field="rate"
+                )
+            if self.method is not RateMethod.MUL:
+                raise ValidationError(
+                    "The base currency always converts by multiplying.", field="method"
+                )

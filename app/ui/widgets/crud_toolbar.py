@@ -34,6 +34,18 @@ class CrudToolbar(QWidget):
         """Edit and Delete need a selected row; Add and Refresh never do."""
         self._edit_button.setEnabled(has_selection)
         self._delete_button.setEnabled(has_selection)
+        # A refusal belongs to one selected row; a new selection starts clean.
+        self._delete_button.setToolTip("")
+
+    def set_delete_enabled(self, enabled: bool, reason: str = "") -> None:
+        """Allow or refuse Delete for the selected row, explaining a refusal.
+
+        ``set_actions_enabled`` covers "nothing is selected". This is for a row
+        that is selected and still cannot go, so the reason sits on the button
+        instead of in a message box the user has to provoke.
+        """
+        self._delete_button.setEnabled(enabled)
+        self._delete_button.setToolTip(reason)
 
     def clear_search(self) -> None:
         """Reset the search box, which also clears the filter."""

@@ -14,7 +14,7 @@ class SqliteCurrencyRepository(SqliteRepository[Currency]):
     """Reads and writes the ``currencies`` table."""
 
     table = "currencies"
-    columns = ("name", "code", "rate", "method")
+    columns = ("name", "code", "rate", "method", "is_base")
 
     def _to_entity(self, row: sqlite3.Row) -> Currency:
         return Currency(
@@ -24,6 +24,7 @@ class SqliteCurrencyRepository(SqliteRepository[Currency]):
             # The column is TEXT precisely so this round trip is exact.
             rate=Decimal(row["rate"]),
             method=RateMethod(row["method"]),
+            is_base=bool(row["is_base"]),
         )
 
     def _to_parameters(self, entity: Currency) -> tuple[object, ...]:
@@ -32,6 +33,9 @@ class SqliteCurrencyRepository(SqliteRepository[Currency]):
             entity.code,
             str(entity.rate),
             entity.method.value,
+            # SQLite has no boolean type: the flag is written as the 0 or 1 the
+            # column's CHECK constraint accepts.
+            int(entity.is_base),
         )
 
     def exists_by_code(self, code: str, *, exclude_id: int | None = None) -> bool:
